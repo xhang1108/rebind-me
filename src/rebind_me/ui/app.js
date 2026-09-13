@@ -171,27 +171,58 @@ function renderDirs(wrap) {
   });
 }
 
+function addShapeHitbox(svg, input, tag, attrs) {
+  const shape = document.createElementNS(SVG_NS, tag);
+  Object.entries(attrs).forEach(([key, value]) => shape.setAttribute(key, value));
+  shape.setAttribute("class", "hitbox");
+  shape.setAttribute("data-input", input);
+  shape.setAttribute("fill", "transparent");
+  shape.setAttribute("pointer-events", "all");
+  shape.addEventListener("click", () => selectInput(input));
+  shape.addEventListener("mouseenter", () => hoverPath(input, true));
+  shape.addEventListener("mouseleave", () => hoverPath(input, false));
+  const title = document.createElementNS(SVG_NS, "title");
+  title.textContent = input;
+  shape.appendChild(title);
+  svg.appendChild(shape);
+}
+
+function roundedTopPath(x, y, w, h, r) {
+  return (
+    `M ${x} ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} ` +
+    `H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} ` +
+    `V ${y + h} H ${x} Z`
+  );
+}
+
 function drawTriggers(svg) {
-  // L2/R2 are not in the artwork. Clone the L1/R1 glyphs and lift them above
-  // the shoulders so the trigger keeps the same curvature and line style.
+  // L2/R2 are not in the artwork. Draw them as longer rounded-top triggers
+  // behind the L1/R1 glyphs so the bumpers cover their lower part.
   const paths = svg.querySelectorAll("path");
-  const clone = (source, input, dy) => {
+  const make = (source, input, x) => {
     if (!source) return;
-    const path = source.cloneNode(false);
+    const bumper = source.getBBox();
+    const top = 18;
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", roundedTopPath(x, top, 30, 13, 4));
+    path.setAttribute("fill", "currentColor");
     path.setAttribute("class", "hit");
     path.setAttribute("data-input", input);
-    path.removeAttribute("transform");
-    path.setAttribute("transform", `translate(0 ${dy})`);
-    path.style.strokeWidth = "";
     path.addEventListener("click", () => selectInput(input));
     const title = document.createElementNS(SVG_NS, "title");
     title.textContent = input;
     path.appendChild(title);
-    svg.appendChild(path);
-    addHitbox(svg, path, input);
+    source.parentNode.insertBefore(path, source); // L1/R1 render on top
+    // Only the exposed band is clickable, so the overlap still chooses L1/R1.
+    addShapeHitbox(svg, input, "rect", {
+      x,
+      y: top,
+      width: 30,
+      height: Math.max(1.5, bumper.y - top),
+    });
   };
-  clone(paths[10], "l2", -8);
-  clone(paths[9], "r2", -8);
+  make(paths[10], "l2", 13.8);
+  make(paths[9], "r2", 83.8);
 }
 
 function renderController() {
