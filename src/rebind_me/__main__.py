@@ -23,8 +23,9 @@ def main(argv: list[str] | None = None) -> int:
 
         return tray_main(args[1:])
 
-    print("rebind-me: skeleton (bridge core not implemented yet)")
-    return 0
+    from rebind_me.bridge import Bridge
+
+    return Bridge().run()
 
 
 if __name__ == "__main__":

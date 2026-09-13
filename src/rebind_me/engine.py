@@ -19,9 +19,46 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .keys import SCROLL_CODES
-from .store import DEFAULT_CHORD_DELAY_MS
+from .store import DEFAULT_CHORD_DELAY_MS, STICK_DIRECTIONS
 
 _TimerCallback = Callable[[float], None]
+
+STICK_ACTIVATION_THRESHOLD = 0.68
+STICK_RELEASE_THRESHOLD = 0.42
+
+
+def resolve_stick_directions(
+    left_x: float,
+    left_y: float,
+    right_x: float,
+    right_y: float,
+    active: object = frozenset(),
+) -> set[str]:
+    """Map both sticks to one hysteretic cardinal direction each (plan.md §4)."""
+    previous = set(active) & set(STICK_DIRECTIONS)
+    resolved: set[str] = set()
+    sticks = (
+        (("left_stick_up", "left_stick_right", "left_stick_down", "left_stick_left"), left_x, left_y),
+        (("right_stick_up", "right_stick_right", "right_stick_down", "right_stick_left"), right_x, right_y),
+    )
+    for directions, x, y in sticks:
+        x = max(-1.0, min(1.0, float(x)))
+        y = max(-1.0, min(1.0, float(y)))
+        up, right, down, left = directions
+        components = {up: -y, right: x, down: y, left: -x}
+        current = next((direction for direction in directions if direction in previous), None)
+        if current is not None:
+            perpendicular = abs(x) if current in (up, down) else abs(y)
+            if (
+                components[current] >= STICK_RELEASE_THRESHOLD
+                and components[current] >= perpendicular * 0.8
+            ):
+                resolved.add(current)
+                continue
+        candidate = max(directions, key=components.__getitem__)
+        if components[candidate] >= STICK_ACTIVATION_THRESHOLD:
+            resolved.add(candidate)
+    return resolved
 
 
 @dataclass
@@ -211,4 +248,9 @@ class MappingEngine:
         )
 
 
-__all__ = ["MappingEngine"]
+__all__ = [
+    "MappingEngine",
+    "STICK_ACTIVATION_THRESHOLD",
+    "STICK_RELEASE_THRESHOLD",
+    "resolve_stick_directions",
+]

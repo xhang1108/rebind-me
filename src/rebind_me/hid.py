@@ -356,10 +356,10 @@ class WindowsHidDevice:
         self._handle = _open_path(
             interface.path, GENERIC_READ | GENERIC_WRITE, FILE_FLAG_OVERLAPPED
         )
-        self._event = _kernel32.CreateEventW(None, False, False, None)
-        if not self._event:
-            _kernel32.CloseHandle(self._handle)
-            self._handle = None
+        self._read_event = _kernel32.CreateEventW(None, False, False, None)
+        self._write_event = _kernel32.CreateEventW(None, False, False, None)
+        if not self._read_event or not self._write_event:
+            self.close()
             raise OSError(ctypes.get_last_error(), "CreateEventW failed")
 
     def read(self, timeout_ms: int) -> bytes | None:
@@ -367,7 +367,7 @@ class WindowsHidDevice:
         buffer = ctypes.create_string_buffer(self.input_report_length)
         read = wintypes.DWORD(0)
         overlapped = OVERLAPPED()
-        overlapped.hEvent = self._event
+        overlapped.hEvent = self._read_event
         if not _kernel32.ReadFile(
             self._handle,
             buffer,
@@ -378,10 +378,10 @@ class WindowsHidDevice:
             error = ctypes.get_last_error()
             if error != ERROR_IO_PENDING:
                 raise OSError(error, "ReadFile failed")
-            wait = _kernel32.WaitForSingleObject(self._event, timeout_ms)
+            wait = _kernel32.WaitForSingleObject(self._read_event, timeout_ms)
             if wait == WAIT_TIMEOUT:
                 _kernel32.CancelIo(self._handle)
-                _kernel32.WaitForSingleObject(self._event, 1000)
+                _kernel32.WaitForSingleObject(self._read_event, 1000)
                 return None
             if wait != WAIT_OBJECT_0:
                 raise OSError(ctypes.get_last_error(), "WaitForSingleObject failed")
@@ -396,7 +396,7 @@ class WindowsHidDevice:
         buffer = ctypes.create_string_buffer(payload, len(payload))
         written = wintypes.DWORD(0)
         overlapped = OVERLAPPED()
-        overlapped.hEvent = self._event
+        overlapped.hEvent = self._write_event
         if not _kernel32.WriteFile(
             self._handle,
             buffer,
@@ -407,7 +407,7 @@ class WindowsHidDevice:
             error = ctypes.get_last_error()
             if error != ERROR_IO_PENDING:
                 raise OSError(error, "WriteFile failed")
-            wait = _kernel32.WaitForSingleObject(self._event, 1000)
+            wait = _kernel32.WaitForSingleObject(self._write_event, 1000)
             if wait != WAIT_OBJECT_0:
                 _kernel32.CancelIo(self._handle)
                 raise OSError(ctypes.get_last_error(), "WriteFile timed out")
@@ -417,10 +417,12 @@ class WindowsHidDevice:
                 raise OSError(ctypes.get_last_error(), "GetOverlappedResult failed")
 
     def close(self) -> None:
-        if self._event:
-            _kernel32.CloseHandle(self._event)
-            self._event = None
-        if self._handle:
+        for attribute in ("_read_event", "_write_event"):
+            handle = getattr(self, attribute, None)
+            if handle:
+                _kernel32.CloseHandle(handle)
+                setattr(self, attribute, None)
+        if getattr(self, "_handle", None):
             _kernel32.CloseHandle(self._handle)
             self._handle = None
 
