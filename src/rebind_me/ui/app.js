@@ -52,8 +52,6 @@ const PATH_INPUT = {
   8: "r3",
   9: "r1",
   10: "l1",
-  11: "r2",
-  12: "l2",
   13: "circle",
   14: "ps",
   15: "dpad_down",
@@ -79,6 +77,8 @@ const HIT_ZONES = [
   ["touchpad", 64, 40.5, 45, 26],
   ["create", 36.5, 36, 12, 11],
   ["options", 91.5, 36, 12, 11],
+  ["l1", 28.8, 29.6, 17, 10],
+  ["r1", 98.8, 29.6, 17, 10],
   ["ps", 64, 70, 14, 12],
   ["mute", 64, 57, 14, 9],
   ["l3", 45.5, 64.5, 15, 15],
@@ -129,31 +129,38 @@ function tagSvg(container) {
   });
 }
 
+function hoverPath(input, on) {
+  document.querySelectorAll(`.pad-svg svg path[data-input="${input}"]`).forEach((path) => {
+    path.classList.toggle("hover", on);
+  });
+}
+
 function renderZones(wrap) {
   const html = HIT_ZONES.map(([input, cx, cy, w, h]) =>
     `<button type="button" class="zone" data-input="${input}" style="${box(cx, cy, w, h)}" title="${input}"></button>`
   ).join("");
   wrap.insertAdjacentHTML("beforeend", html);
   wrap.querySelectorAll(".zone").forEach((node) => {
-    node.addEventListener("click", () => selectInput(node.dataset.input));
+    const input = node.dataset.input;
+    node.addEventListener("click", () => selectInput(input));
+    node.addEventListener("mouseenter", () => hoverPath(input, true));
+    node.addEventListener("mouseleave", () => hoverPath(input, false));
   });
 }
 
 function renderController() {
   const container = document.getElementById("controller");
+  // The artwork has no L2/R2 (they sit behind the shoulders), so draw them.
   container.innerHTML = `
-    <div class="shoulders">
-      <button type="button" class="sh" data-input="l2">L2</button>
-      <button type="button" class="sh" data-input="l1">L1</button>
-      <span class="spacer"></span>
-      <button type="button" class="sh" data-input="r1">R1</button>
-      <button type="button" class="sh" data-input="r2">R2</button>
-    </div>
-    <div class="pad-wrap"><div class="pad-svg">${svgMarkup}</div></div>`;
+    <div class="pad-wrap">
+      <div class="pad-svg">${svgMarkup}</div>
+      <button type="button" class="trigger left" data-input="l2" style="${box(15, 19, 34, 13)}">L2</button>
+      <button type="button" class="trigger right" data-input="r2" style="${box(113, 19, 34, 13)}">R2</button>
+    </div>`;
   const wrap = container.querySelector(".pad-wrap");
   tagSvg(container);
   renderZones(wrap);
-  container.querySelectorAll(".sh").forEach((node) => {
+  wrap.querySelectorAll(".trigger").forEach((node) => {
     node.addEventListener("click", () => selectInput(node.dataset.input));
   });
   refreshMap();
