@@ -8,6 +8,9 @@
   --muted: #93a0b0;
   --accent: #4c8bf5;
   --accent-soft: #24344e;
+  --hover: #ffd166;
+  --select: #c084fc;
+  --pressed: #ffffff;
   --border: #2c3540;
   --ok: #3fb950;
   --tri: #36c9a0;
@@ -26,6 +29,9 @@
   --muted: #5b6675;
   --accent: #2563eb;
   --accent-soft: #dbe6fb;
+  --hover: #c2410c;
+  --select: #7c3aed;
+  --pressed: #111827;
   --border: #d5dbe3;
   --ok: #1a7f37;
   --tri: #0f9d76;
@@ -236,7 +242,7 @@ textarea:focus {
   position: absolute;
   inset: 0;
   z-index: 0;
-  color: color-mix(in srgb, var(--text) 62%, transparent);
+  color: var(--muted);
 }
 
 .pad-svg svg {
@@ -249,45 +255,65 @@ textarea:focus {
   cursor: pointer;
   pointer-events: all;
   stroke: transparent;
-  stroke-width: 1;
-  transition: fill 0.1s ease, opacity 0.1s ease;
+  stroke-width: 6.25;
+  transition: fill 0.1s ease, stroke 0.1s ease;
 }
 
 .hitbox {
   cursor: pointer;
 }
 
-.pad-svg svg .hit.hover,
-.pad-svg svg .hit:hover {
-  fill: var(--accent);
-  opacity: 0.65;
+.pad-svg svg path:not(.hit) {
+  pointer-events: none;
 }
 
 .pad-svg svg .hit.mapped {
   fill: var(--accent);
-  opacity: 0.45;
-}
-
-@keyframes selPulse {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
-  }
 }
 
 .pad-svg svg .hit.selected {
-  fill: var(--accent);
-  animation: selPulse 1.1s ease-in-out infinite;
+  fill: var(--select);
+  filter: drop-shadow(0 0 4px var(--select));
+}
+
+.pad-svg svg .hit.hover,
+.pad-svg svg .hit:hover {
+  fill: var(--hover);
+  filter: none;
 }
 
 .pad-svg svg .hit.pressed {
-  fill: #cfe0ff;
-  opacity: 1;
-  filter: drop-shadow(0 0 3px #a9caff);
-  animation: none;
+  fill: var(--pressed);
+  filter: drop-shadow(0 0 5px var(--hover));
+}
+
+.pad-svg svg path.st0.hit {
+  fill: none;
+  stroke: currentColor;
+}
+
+.pad-svg svg path.st0.hit.mapped {
+  fill: none;
+  stroke: var(--accent);
+}
+
+.pad-svg svg path.st0.hit.selected {
+  fill: none;
+  stroke: var(--select);
+  filter: drop-shadow(0 0 4px var(--select));
+}
+
+.pad-svg svg path.st0.hit.hover,
+.pad-svg svg path.st0.hit:hover {
+  fill: none;
+  stroke: var(--hover);
+  filter: none;
+}
+
+.pad-svg svg path.st0.hit.pressed {
+  fill: none;
+  stroke: var(--pressed);
+  filter: drop-shadow(0 0 5px var(--hover));
 }
 
 .dir {

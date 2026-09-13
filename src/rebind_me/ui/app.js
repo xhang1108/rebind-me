@@ -11,6 +11,7 @@ let selected = "cross";
 
 const message = document.getElementById("message");
 const VB = 128;
+const ART_SCALE = 0.16;
 
 function showMessage(text, kind) {
   message.textContent = text;
@@ -52,16 +53,18 @@ const PATH_INPUT = {
   8: "r3",
   9: "r1",
   10: "l1",
-  13: "circle",
-  14: "mute",
-  15: "dpad_down",
-  16: "dpad_up",
-  17: "dpad_left",
-  18: "dpad_right",
-  19: "options",
-  20: "create",
-  21: "ps",
-  22: "ps",
+  11: "circle",
+  12: "mute",
+  13: "dpad_down",
+  14: "dpad_up",
+  15: "dpad_left",
+  16: "dpad_right",
+  17: "options",
+  18: "create",
+  19: "ps",
+  20: "ps",
+  21: "l2",
+  22: "r2",
 };
 
 // Thin glyphs get an invisible thicker stroke so they are easy to hit.
@@ -142,22 +145,28 @@ function addHitbox(svg, element, input) {
 
 function tagSvg(container) {
   const svg = container.querySelector(".pad-svg svg");
-  const paths = svg.querySelectorAll("path");
+  const art = svg.querySelector("g");
+  const paths = [...svg.querySelectorAll("path")];
   paths.forEach((path, index) => {
+    if (index === 7 || index === 8) path.classList.add("knob");
     const input = PATH_INPUT[index];
     if (!input) return;
     path.dataset.input = input;
     path.classList.add("hit");
-    if (THIN_INPUTS.has(input)) path.style.strokeWidth = "5";
+    if (THIN_INPUTS.has(input)) path.style.strokeWidth = "31.25";
     const hint = document.createElementNS(SVG_NS, "title");
     const summary = mappingSummary(working.mappings[input], working.actions[input]);
     hint.textContent = summary === "-" ? input : `${input}: ${summary}`;
     path.appendChild(hint);
     path.addEventListener("click", () => selectInput(input));
   });
-  paths.forEach((path, index) => {
-    const input = PATH_INPUT[index];
-    if (input) addHitbox(svg, path, input);
+  const base = paths.filter((path, index) => !PATH_INPUT[index]);
+  const bumpers = [paths[9], paths[10]];
+  const rest = paths.filter((path, index) => PATH_INPUT[index] && !bumpers.includes(path));
+  const ordered = [...bumpers, ...base, ...rest];
+  ordered.forEach((path) => art.appendChild(path));
+  ordered.forEach((path) => {
+    if (path.dataset.input) addHitbox(art, path, path.dataset.input);
   });
 }
 
@@ -171,84 +180,25 @@ function renderDirs(wrap) {
   });
 }
 
-function addShapeHitbox(svg, input, tag, attrs) {
-  const shape = document.createElementNS(SVG_NS, tag);
-  Object.entries(attrs).forEach(([key, value]) => shape.setAttribute(key, value));
-  shape.setAttribute("class", "hitbox");
-  shape.setAttribute("data-input", input);
-  shape.setAttribute("fill", "transparent");
-  shape.setAttribute("pointer-events", "all");
-  shape.addEventListener("click", () => selectInput(input));
-  shape.addEventListener("mouseenter", () => hoverPath(input, true));
-  shape.addEventListener("mouseleave", () => hoverPath(input, false));
-  const title = document.createElementNS(SVG_NS, "title");
-  title.textContent = input;
-  shape.appendChild(title);
-  svg.appendChild(shape);
-}
-
-function hollowTopPath(x, y, w, h, r, t) {
-  const ri = Math.max(0.2, r - t);
-  return (
-    `M ${x} ${y + h} V ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} ` +
-    `H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} V ${y + h} ` +
-    `H ${x + w - t} V ${y + r} A ${ri} ${ri} 0 0 0 ${x + w - r} ${y + t} ` +
-    `H ${x + r} A ${ri} ${ri} 0 0 0 ${x + t} ${y + r} V ${y + h} Z`
-  );
-}
-
-function drawTriggers(svg) {
-  // L2/R2 are not in the artwork. Draw them as longer rounded-top triggers
-  // behind the L1/R1 glyphs so the bumpers cover their lower part.
-  const paths = svg.querySelectorAll("path");
-  const make = (source, input, x) => {
-    if (!source) return;
-    const bumper = source.getBBox();
-    const top = 17;
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", hollowTopPath(x, top, 30, 15, 4, 0.8));
-    path.setAttribute("fill-rule", "evenodd");
-    path.setAttribute("fill", "currentColor");
-    path.setAttribute("class", "hit");
-    path.setAttribute("data-input", input);
-    path.addEventListener("click", () => selectInput(input));
-    const title = document.createElementNS(SVG_NS, "title");
-    title.textContent = input;
-    path.appendChild(title);
-    source.parentNode.insertBefore(path, source); // L1/R1 render on top
-    // Only the exposed band is clickable, so the overlap still chooses L1/R1.
-    addShapeHitbox(svg, input, "rect", {
-      x,
-      y: top,
-      width: 30,
-      height: Math.max(1.5, bumper.y - top),
-    });
-  };
-  make(paths[10], "l2", 13.8);
-  make(paths[9], "r2", 83.8);
-}
-
 function renderController() {
   const container = document.getElementById("controller");
   container.innerHTML = `<div class="pad-wrap"><div class="pad-svg">${svgMarkup}</div></div>`;
   const wrap = container.querySelector(".pad-wrap");
   tagSvg(container);
-  drawTriggers(container.querySelector(".pad-svg svg"));
   renderDirs(wrap);
   refreshMap();
 }
 
 function updateSticks(axes) {
-  const paths = document.querySelectorAll(".pad-svg svg path");
-  const leftInner = paths[7];
-  const rightInner = paths[8];
+  const leftInner = document.querySelector('.pad-svg svg path.knob[data-input="l3"]');
+  const rightInner = document.querySelector('.pad-svg svg path.knob[data-input="r3"]');
   if (leftInner) {
     const [x, y] = stickOffset(axes.leftX || 0, axes.leftY || 0);
-    leftInner.setAttribute("transform", `translate(${x} ${y})`);
+    leftInner.setAttribute("transform", `translate(${x / ART_SCALE} ${y / ART_SCALE})`);
   }
   if (rightInner) {
     const [x, y] = stickOffset(axes.rightX || 0, axes.rightY || 0);
-    rightInner.setAttribute("transform", `translate(${x} ${y})`);
+    rightInner.setAttribute("transform", `translate(${x / ART_SCALE} ${y / ART_SCALE})`);
   }
 }
 
