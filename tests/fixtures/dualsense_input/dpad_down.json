@@ -1,0 +1,9 @@
+{
+  "description": "Press D-pad down",
+  "hex": "01 7c 7c 81 81 00 00 40 04 00 00 00 3c 21 57 ac 24 00 f5 ff 00 00 22 fe 48 1e 0e f8 12 78 04 2d 15 81 34 63 22 80 00 00 00 9e 09 09 00 00 00 00 00 b3 90 04 2d 29 18 00 cd 5d 00 98 b2 f6 b7 c2",
+  "expect": {
+    "buttons": [
+      "dpad_down"
+    ]
+  }
+}

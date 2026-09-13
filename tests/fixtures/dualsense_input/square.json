@@ -1,0 +1,9 @@
+{
+  "description": "Hold square",
+  "hex": "01 83 7d 83 7f 00 00 b6 18 00 00 00 b2 c6 56 ac 04 00 ec ff f0 ff 9f 03 c4 1e 77 fb cd 6d 70 1c 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 3b 80 70 1c 29 18 00 c0 f2 f9 40 eb 3c c2 77",
+  "expect": {
+    "buttons": [
+      "square"
+    ]
+  }
+}

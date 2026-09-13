@@ -1,0 +1,9 @@
+{
+  "description": "Press R3 (click the right stick)",
+  "hex": "01 82 7c 7e 7b 00 00 32 08 80 00 00 2e 08 57 ac 06 00 f4 ff f5 ff f6 ff 82 1c 3c f2 31 06 6e 28 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 73 20 6e 28 29 18 00 1f 21 4b 8b 24 10 42 6a",
+  "expect": {
+    "buttons": [
+      "r3"
+    ]
+  }
+}

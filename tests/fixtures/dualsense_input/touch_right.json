@@ -1,0 +1,8 @@
+{
+  "description": "Hold one finger on the right half of the touchpad",
+  "hex": "01 80 7f 81 81 00 00 9c 08 00 02 00 98 54 57 ac f6 ff 04 00 f9 ff f0 ff 79 1d 1c f6 de f3 6b 36 15 05 39 f6 1c 80 00 00 00 56 09 09 00 00 00 00 00 33 09 6c 36 29 18 00 94 df 3f 75 0e e7 bf 58",
+  "expect": {
+    "touchActive": true,
+    "touchHalf": "right"
+  }
+}

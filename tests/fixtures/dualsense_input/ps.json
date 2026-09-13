@@ -1,0 +1,9 @@
+{
+  "description": "Press PS",
+  "hex": "01 7c 7c 81 81 00 00 a5 08 00 01 00 a1 0e 57 ac 05 00 f6 ff f8 ff ff fe d0 1c 06 f4 a8 55 9c 29 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 13 6f 9c 29 29 18 00 9f 73 78 a6 6c d7 43 87",
+  "expect": {
+    "buttons": [
+      "ps"
+    ]
+  }
+}

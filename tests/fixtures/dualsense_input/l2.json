@@ -1,0 +1,11 @@
+{
+  "description": "Press L2 all the way down",
+  "hex": "01 83 7d 83 7f ff 00 35 08 04 00 00 31 e1 56 ac ff ff ee ff f6 ff b4 fe 51 1d f5 f5 e9 6c 4a 21 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 1c 8d 4a 21 29 18 00 ce 26 e9 ae 1f 2e b2 44",
+  "expect": {
+    "buttons": [
+      "l2"
+    ],
+    "leftTrigger": 1.0
+  },
+  "tolerance": 0.05
+}

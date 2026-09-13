@@ -1,0 +1,11 @@
+{
+  "description": "Press R2 all the way down",
+  "hex": "01 83 7d 83 7f 00 ff 0f 08 08 00 00 0b e5 56 ac 64 ff 46 00 b3 ff 73 fc 25 1d 39 f5 1c f5 fe 21 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 d3 17 ff 21 29 18 00 c8 98 b1 bc ab 77 01 c3",
+  "expect": {
+    "buttons": [
+      "r2"
+    ],
+    "rightTrigger": 1.0
+  },
+  "tolerance": 0.05
+}

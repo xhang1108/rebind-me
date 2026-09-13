@@ -1,0 +1,9 @@
+{
+  "description": "Press the touchpad",
+  "hex": "01 7c 7c 81 81 00 00 40 08 00 02 00 3c 15 57 ac 02 00 ee ff f3 ff bb ff 4f 1d 7b f5 f3 f2 d1 2a 15 01 43 93 23 80 00 00 00 11 09 09 00 00 00 00 00 b3 10 d2 2a 29 18 00 1f 97 17 7e ad 63 19 ba",
+  "expect": {
+    "buttons": [
+      "touchpad"
+    ]
+  }
+}

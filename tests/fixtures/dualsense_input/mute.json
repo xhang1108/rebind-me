@@ -1,0 +1,9 @@
+{
+  "description": "Press mute",
+  "hex": "01 7c 7c 81 81 00 00 7b 08 00 04 00 77 1a 57 ac 0a 00 e9 ff e9 ff 84 fd bf 1d 48 f6 f8 28 c7 2b 15 81 34 63 22 80 00 00 00 9e 09 09 00 00 00 00 00 56 3e c7 2b 29 18 00 ba 20 60 a9 f3 ce 7d 86",
+  "expect": {
+    "buttons": [
+      "mute"
+    ]
+  }
+}

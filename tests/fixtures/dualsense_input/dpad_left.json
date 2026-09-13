@@ -1,0 +1,9 @@
+{
+  "description": "Press D-pad left",
+  "hex": "01 7c 7c 81 81 00 00 b2 06 00 00 00 ae 23 57 ac 1e 00 db ff 05 00 65 fe 1a 1e 76 f7 c5 1a 77 2d 15 81 34 63 22 80 00 00 00 9e 09 09 00 00 00 00 00 73 30 77 2d 29 18 00 8a 61 42 62 66 53 93 1e",
+  "expect": {
+    "buttons": [
+      "dpad_left"
+    ]
+  }
+}

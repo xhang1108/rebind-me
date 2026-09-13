@@ -1,0 +1,9 @@
+{
+  "description": "Press Options",
+  "hex": "01 83 7d 83 7f 00 00 f8 08 20 00 00 f4 fd 56 ac 01 00 f4 ff f9 ff eb ff 56 1c b5 f2 86 a0 8e 26 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 ba c1 8e 26 29 18 00 27 89 b7 c0 cd e6 c0 33",
+  "expect": {
+    "buttons": [
+      "options"
+    ]
+  }
+}

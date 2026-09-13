@@ -1,0 +1,9 @@
+{
+  "description": "Hold L1",
+  "hex": "01 83 7d 83 7f 00 00 98 08 01 00 00 94 cf 56 ac 0c 00 f4 ff f9 ff df ff 4a 1f bc 02 21 cd 10 1e 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 fb e1 10 1e 29 18 00 cf 13 17 13 f8 af 0b 13",
+  "expect": {
+    "buttons": [
+      "l1"
+    ]
+  }
+}

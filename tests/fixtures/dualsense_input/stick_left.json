@@ -1,0 +1,8 @@
+{
+  "description": "Push the left stick fully left and hold",
+  "hex": "01 00 88 81 81 00 00 ba 08 00 00 00 b6 2d 57 ac fa ff f0 ff f7 ff 8c fd 48 1e fd f8 91 50 4d 2f 15 81 34 63 22 80 00 00 00 9e 09 09 00 00 00 00 00 73 67 4d 2f 29 18 00 da fc df 86 78 f1 8a af",
+  "expect": {
+    "leftX": -1.0
+  },
+  "tolerance": 0.08
+}

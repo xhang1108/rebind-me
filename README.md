@@ -71,8 +71,13 @@ The UI is served at <http://127.0.0.1:4173/>.
 ```bat
 python -m pip install -e .
 python -m unittest discover -s tests -v
-node --test tests
+node --test
 ```
+
+The DualSense USB HID wire format (input/output offsets, bit fields, trigger
+encoding) is documented in [PROTOCOL.md](PROTOCOL.md). Recorded input
+fixtures live in `tests/fixtures/dualsense_input/`; see its README for the
+format and how to capture them from a real controller.
 
 ## Status
 

@@ -1,0 +1,9 @@
+{
+  "description": "Hold circle (O)",
+  "hex": "01 83 7d 83 7f 00 00 cb 48 00 00 00 c7 c3 56 ac ff ff f5 ff fe ff 7f 04 e4 1e 61 fe ec a0 e7 1b 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 ab b8 e7 1b 29 18 00 ad 0d b3 bf fa fe b2 66",
+  "expect": {
+    "buttons": [
+      "circle"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "description": "Press L3 (click the left stick)",
+  "hex": "01 8e 70 83 7f 00 00 c3 08 40 00 00 bf 04 57 ac 09 00 f7 ff f5 ff 8a ff e9 1b 0d f2 bc 0f cd 27 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 53 2d cd 27 29 18 00 b7 7a 7b a0 76 4c 3a f0",
+  "expect": {
+    "buttons": [
+      "l3"
+    ]
+  }
+}

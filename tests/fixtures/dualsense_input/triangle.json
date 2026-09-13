@@ -1,0 +1,9 @@
+{
+  "description": "Hold triangle",
+  "hex": "01 83 7d 83 7f 00 00 70 88 00 00 00 6c c9 56 ac 15 00 f5 ff f1 ff e1 02 f0 1d df f8 c4 39 f0 1c 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 fb 4e f0 1c 29 18 00 d7 26 f1 4d 44 c3 06 a7",
+  "expect": {
+    "buttons": [
+      "triangle"
+    ]
+  }
+}

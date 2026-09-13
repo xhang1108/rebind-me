@@ -1,0 +1,9 @@
+{
+  "description": "Press Create",
+  "hex": "01 83 7d 83 7f 00 00 ca 08 10 00 00 c6 f9 56 ac da ff f3 ff f8 ff 03 00 7e 1c 8e f3 c1 b4 ca 25 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 73 d5 ca 25 29 18 00 22 ae 26 f6 7c a2 1b 40",
+  "expect": {
+    "buttons": [
+      "create"
+    ]
+  }
+}

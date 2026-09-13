@@ -1,0 +1,9 @@
+{
+  "description": "Hold cross (X); release the rest",
+  "hex": "01 83 7d 83 7f 00 00 b2 28 00 00 00 ae bf 56 ac 09 00 fa ff ed ff 53 03 f0 1e 82 ff fa 90 27 1b 15 80 00 00 00 80 00 00 00 00 09 09 00 00 00 00 00 bb a4 27 1b 29 18 00 51 84 93 cc 4d 10 41 21",
+  "expect": {
+    "buttons": [
+      "cross"
+    ]
+  }
+}
