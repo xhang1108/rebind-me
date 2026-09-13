@@ -20,6 +20,10 @@ export function clamp(value, low, high) {
   return Math.max(low, Math.min(high, Number(value)));
 }
 
+export function stickOffset(x, y, max = 2.2) {
+  return [clamp(x, -1, 1) * max, clamp(y, -1, 1) * max];
+}
+
 export function parseSequence(text) {
   return String(text || "")
     .split(";")

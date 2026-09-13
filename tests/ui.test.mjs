@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   INPUT_NAMES, MOUSE_CODES, SCROLL_CODES,
   appendKey, appendKeys, clamp, formatSequence, hexToRgb, mappingEntryFromForm,
-  mappingFormFromEntry, mappingSummary, parseSequence, rgbToHex,
+  mappingFormFromEntry, mappingSummary, parseSequence, rgbToHex, stickOffset,
 } from "../src/rebind_me/ui/model.js";
 
 test("input names match the bridge contract", () => {
@@ -82,6 +82,13 @@ test("append captured chord segment", () => {
   assert.equal(appendKeys("", ["ControlLeft", "Tab"]), "ControlLeft, Tab");
   assert.equal(appendKeys("KeyK", ["ControlLeft", "Tab"]), "KeyK, ControlLeft, Tab");
   assert.equal(appendKeys("KeyK", ["ControlLeft", "Tab"], true), "KeyK; ControlLeft, Tab");
+});
+
+test("stick offset scales and clamps", () => {
+  assert.deepEqual(stickOffset(0, 0), [0, 0]);
+  assert.deepEqual(stickOffset(1, -1, 2), [2, -2]);
+  assert.deepEqual(stickOffset(2, 2, 2), [2, 2]);
+  assert.deepEqual(stickOffset(-5, 0.5, 2), [-2, 1]);
 });
 
 test("code lists are non-empty", () => {

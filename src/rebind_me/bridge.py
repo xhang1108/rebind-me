@@ -51,6 +51,7 @@ class Bridge:
         self._device = None
         self._stick_directions: set[str] = set()
         self._active_inputs: set[str] = set()
+        self._axes = {"leftX": 0.0, "leftY": 0.0, "rightX": 0.0, "rightY": 0.0}
         self._mic_muted = False
         self._mic_led_inverted = False
         self._last_activity_at = 0.0
@@ -153,6 +154,12 @@ class Bridge:
 
         now = time.monotonic()
         with self._lock:
+            self._axes = {
+                "leftX": state.left_x,
+                "leftY": state.left_y,
+                "rightX": state.right_x,
+                "rightY": state.right_y,
+            }
             previous = self._active_inputs
             directions = resolve_stick_directions(
                 state.left_x, state.left_y, state.right_x, state.right_y, self._stick_directions
@@ -261,6 +268,7 @@ class Bridge:
                 "mouseControl": self._mapping.snapshot()["touchpad"]["mouseControl"],
                 "port": self._port(),
                 "inputs": sorted(self._active_inputs),
+                "axes": dict(self._axes),
             }
 
     def get_mapping(self) -> dict:

@@ -1,7 +1,7 @@
 import {
   ACTIONS, EFFECTS, INPUT_NAMES, MODES, MOUSE_CODES, SCROLL_CODES, STATUS_STATES,
   appendKeys, clamp, hexToRgb, mappingEntryFromForm, mappingFormFromEntry,
-  mappingSummary, rgbToHex,
+  mappingSummary, rgbToHex, stickOffset,
 } from "./model.js";
 
 let mapping = null;
@@ -40,63 +40,137 @@ function options(values, selected_value) {
 
 const pct = (value) => `${((value / VB) * 100).toFixed(3)}%`;
 
-// (input, label, cx, cy, w, h, shape) in the SVG viewBox (0..128).
-const LAYOUT = [
-  ["l2", "L2", 15, 40, 22, 18, "pill"],
-  ["l1", "L1", 28.8, 29.7, 22, 11, "pill"],
-  ["r1", "R1", 98.8, 29.7, 22, 11, "pill"],
-  ["r2", "R2", 113, 40, 22, 18, "pill"],
-  ["create", "Create", 36.5, 36, 12, 10, "pill"],
-  ["options", "Options", 91.5, 36, 12, 10, "pill"],
-  ["touchpad", "Touchpad", 64, 40.5, 45, 26, "rect"],
-  ["ps", "PS", 64, 70, 13, 13, "round"],
-  ["mute", "Mute", 64, 57, 12, 8, "pill"],
-  ["dpad_up", "▲", 29, 42.7, 11, 11, "round"],
-  ["dpad_left", "◀", 22.7, 49, 11, 11, "round"],
-  ["dpad_right", "▶", 35.2, 49, 11, 11, "round"],
-  ["dpad_down", "▼", 29, 55.2, 11, 11, "round"],
-  ["triangle", "△", 99, 40, 12, 12, "round"],
-  ["square", "□", 91, 48, 12, 12, "round"],
-  ["circle", "○", 107, 48, 12, 12, "round"],
-  ["cross", "✕", 99, 56, 12, 12, "round"],
-  ["left_stick_up", "L▲", 45.5, 51.5, 9, 9, "round"],
-  ["left_stick_left", "L◀", 32, 64.5, 9, 9, "round"],
-  ["left_stick_right", "L▶", 59, 64.5, 9, 9, "round"],
-  ["left_stick_down", "L▼", 45.5, 77.5, 9, 9, "round"],
-  ["l3", "L3", 45.5, 64.5, 13, 13, "round"],
-  ["right_stick_up", "R▲", 82.5, 51.5, 9, 9, "round"],
-  ["right_stick_left", "R◀", 69, 64.5, 9, 9, "round"],
-  ["right_stick_right", "R▶", 96, 64.5, 9, 9, "round"],
-  ["right_stick_down", "R▼", 82.5, 77.5, 9, 9, "round"],
-  ["r3", "R3", 82.5, 64.5, 13, 13, "round"],
+// SVG path index -> input name, from the measured path bounding boxes.
+const PATH_INPUT = {
+  0: "touchpad",
+  2: "triangle",
+  3: "cross",
+  4: "square",
+  5: "r3",
+  6: "l3",
+  7: "l3",
+  8: "r3",
+  9: "r1",
+  10: "l1",
+  11: "r2",
+  12: "l2",
+  13: "circle",
+  14: "ps",
+  15: "dpad_down",
+  16: "dpad_up",
+  17: "dpad_left",
+  18: "dpad_right",
+  19: "options",
+  20: "create",
+  21: "mute",
+};
+
+// Invisible hit zones over the SVG glyphs (their outlines are hollow, so the
+// centre would otherwise miss the path). No artwork, just click targets.
+const HIT_ZONES = [
+  ["triangle", 99, 40, 13, 13],
+  ["circle", 107, 48, 13, 13],
+  ["cross", 99, 56, 13, 13],
+  ["square", 91, 48, 13, 13],
+  ["dpad_up", 29, 42.7, 12, 12],
+  ["dpad_down", 29, 55.2, 12, 12],
+  ["dpad_left", 22.7, 49, 12, 12],
+  ["dpad_right", 35.2, 49, 12, 12],
+  ["touchpad", 64, 40.5, 45, 26],
+  ["create", 36.5, 36, 12, 11],
+  ["options", 91.5, 36, 12, 11],
+  ["ps", 64, 70, 14, 12],
+  ["mute", 64, 57, 14, 9],
+  ["l3", 45.5, 64.5, 15, 15],
+  ["r3", 82.5, 64.5, 15, 15],
+  ["left_stick_up", 45.5, 52.5, 9, 9],
+  ["left_stick_down", 45.5, 76.5, 9, 9],
+  ["left_stick_left", 33.5, 64.5, 9, 9],
+  ["left_stick_right", 57.5, 64.5, 9, 9],
+  ["right_stick_up", 82.5, 52.5, 9, 9],
+  ["right_stick_down", 82.5, 76.5, 9, 9],
+  ["right_stick_left", 70.5, 64.5, 9, 9],
+  ["right_stick_right", 94.5, 64.5, 9, 9],
 ];
 
-const FACES = new Set(["triangle", "circle", "cross", "square"]);
 let svgMarkup = "";
 
 function box(cx, cy, w, h) {
   return `left:${pct(cx - w / 2)};top:${pct(cy - h / 2)};width:${pct(w)};height:${pct(h)}`;
 }
 
+function selectInput(input) {
+  selected = input;
+  refreshMap();
+  renderEditor();
+}
+
+function refreshMap() {
+  document.querySelectorAll("[data-input]").forEach((node) => {
+    const input = node.dataset.input;
+    const mapped = working.mappings[input] || working.actions[input];
+    node.classList.toggle("mapped", !!mapped);
+    node.classList.toggle("selected", input === selected);
+  });
+}
+
+function tagSvg(container) {
+  const paths = container.querySelectorAll(".pad-svg svg path");
+  paths.forEach((path, index) => {
+    const input = PATH_INPUT[index];
+    if (!input) return;
+    path.dataset.input = input;
+    path.classList.add("hit");
+    const hint = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    const summary = mappingSummary(working.mappings[input], working.actions[input]);
+    hint.textContent = summary === "-" ? input : `${input}: ${summary}`;
+    path.appendChild(hint);
+    path.addEventListener("click", () => selectInput(input));
+  });
+}
+
+function renderZones(wrap) {
+  const html = HIT_ZONES.map(([input, cx, cy, w, h]) =>
+    `<button type="button" class="zone" data-input="${input}" style="${box(cx, cy, w, h)}" title="${input}"></button>`
+  ).join("");
+  wrap.insertAdjacentHTML("beforeend", html);
+  wrap.querySelectorAll(".zone").forEach((node) => {
+    node.addEventListener("click", () => selectInput(node.dataset.input));
+  });
+}
+
 function renderController() {
   const container = document.getElementById("controller");
-  const controls = LAYOUT.map(([input, label, cx, cy, w, h, shape]) => {
-    const entry = working.mappings[input];
-    const action = working.actions[input];
-    const mapped = entry || action ? " mapped" : "";
-    const selectedClass = input === selected ? " selected" : "";
-    const face = FACES.has(input) ? ` face-${input}` : "";
-    const summary = mappingSummary(entry, action);
-    const sumText = summary === "-" ? "" : summary;
-    return `<button type="button" class="ctl ${shape}${mapped}${selectedClass}${face}" data-input="${input}"
-      style="${box(cx, cy, w, h)}">
-      <span class="label">${label}</span><span class="sum">${sumText}</span>
-    </button>`;
-  }).join("");
-  container.innerHTML = `<div class="pad-svg">${svgMarkup}</div>` + controls;
-  container.querySelectorAll(".ctl").forEach((node) => {
-    node.addEventListener("click", () => { selected = node.dataset.input; renderController(); renderEditor(); });
+  container.innerHTML = `
+    <div class="shoulders">
+      <button type="button" class="sh" data-input="l2">L2</button>
+      <button type="button" class="sh" data-input="l1">L1</button>
+      <span class="spacer"></span>
+      <button type="button" class="sh" data-input="r1">R1</button>
+      <button type="button" class="sh" data-input="r2">R2</button>
+    </div>
+    <div class="pad-wrap"><div class="pad-svg">${svgMarkup}</div></div>`;
+  const wrap = container.querySelector(".pad-wrap");
+  tagSvg(container);
+  renderZones(wrap);
+  container.querySelectorAll(".sh").forEach((node) => {
+    node.addEventListener("click", () => selectInput(node.dataset.input));
   });
+  refreshMap();
+}
+
+function updateSticks(axes) {
+  const paths = document.querySelectorAll(".pad-svg svg path");
+  const leftInner = paths[7];
+  const rightInner = paths[8];
+  if (leftInner) {
+    const [x, y] = stickOffset(axes.leftX || 0, axes.leftY || 0);
+    leftInner.setAttribute("transform", `translate(${x} ${y})`);
+  }
+  if (rightInner) {
+    const [x, y] = stickOffset(axes.rightX || 0, axes.rightY || 0);
+    rightInner.setAttribute("transform", `translate(${x} ${y})`);
+  }
 }
 
 function renderEditor() {
@@ -208,7 +282,7 @@ function applyEditor() {
     });
     if (result.entry) working.mappings[selected] = result.entry;
   }
-  renderController();
+  refreshMap();
 }
 
 async function recordKey(button, newSegment) {
@@ -243,7 +317,7 @@ async function saveMapping() {
   };
   mapping = await api("/api/mapping", "PUT", { ...documentBody, baseVersion: mapping.baseVersion });
   working = JSON.parse(JSON.stringify(mapping));
-  renderController();
+  refreshMap();
   renderEditor();
   showMessage("Mappings saved", "ok");
 }
@@ -370,9 +444,10 @@ async function pollStatus() {
     deviceBadge.classList.toggle("connected", status.device === "connected");
     document.getElementById("status-state").textContent = `state: ${status.status}`;
     const pressed = new Set(status.inputs || []);
-    document.querySelectorAll("#controller .ctl").forEach((node) => {
+    document.querySelectorAll("#controller [data-input]").forEach((node) => {
       node.classList.toggle("pressed", pressed.has(node.dataset.input));
     });
+    updateSticks(status.axes || {});
   } catch (error) {
     deviceBadge.textContent = "device: offline";
     deviceBadge.classList.remove("connected");
