@@ -19,6 +19,15 @@ project. Refer to the upstream repository for the authoritative license text.
 | `dualsense-ts` | github.com/nsfm/dualsense-ts | Node; consulted for protocol facts only |
 | SDL `SDL_hidapi_ps5.c` | libsdl-org/SDL | zlib license (SDL); consulted for protocol facts only |
 
+## Bundled assets
+
+| Asset | Source | License |
+|---|---|---|
+| `src/rebind_me/ui/assets/dualsense.svg` | SVG Repo (svgrepo.com) | CC0 1.0 (public domain dedication) |
+
+The controller artwork is dedicated to the public domain under CC0 1.0. It is
+used to draw the mapping diagram and is recoloured via CSS (`currentColor`).
+
 ## Trademarks
 
 "DualSense" and "PlayStation" are trademarks of Sony Interactive Entertainment

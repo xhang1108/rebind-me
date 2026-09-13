@@ -33,4 +33,4 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-rebind_me = ["ui/*"]
+rebind_me = ["ui/*", "ui/assets/*"]

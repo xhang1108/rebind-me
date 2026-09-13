@@ -10,8 +10,7 @@ let working = null;
 let selected = "cross";
 
 const message = document.getElementById("message");
-const SCALE_W = 760;
-const SCALE_H = 470;
+const VB = 128;
 
 function showMessage(text, kind) {
   message.textContent = text;
@@ -39,53 +38,49 @@ function options(values, selected_value) {
   return values.map((value) => `<option value="${value}"${value === selected_value ? " selected" : ""}>${value || "(none)"}</option>`).join("");
 }
 
-const pct = (value, total) => `${((value / total) * 100).toFixed(3)}%`;
+const pct = (value) => `${((value / VB) * 100).toFixed(3)}%`;
 
-// (input, label, x, y, w, h, shape) in a 760x470 space.
+// (input, label, cx, cy, w, h, shape) in the SVG viewBox (0..128).
 const LAYOUT = [
-  ["l2", "L2", 30, 6, 100, 34, "pill"],
-  ["l1", "L1", 140, 6, 100, 34, "pill"],
-  ["r1", "R1", 520, 6, 100, 34, "pill"],
-  ["r2", "R2", 630, 6, 100, 34, "pill"],
-  ["create", "Create", 300, 52, 64, 24, "pill"],
-  ["options", "Options", 396, 52, 64, 24, "pill"],
-  ["touchpad", "Touchpad", 300, 84, 160, 110, "rect"],
-  ["ps", "PS", 360, 204, 44, 44, "round"],
-  ["mute", "Mute", 362, 252, 40, 22, "pill"],
-  ["dpad_up", "▲", 95, 180, 50, 50, "round"],
-  ["dpad_left", "◀", 45, 230, 50, 50, "round"],
-  ["dpad_right", "▶", 145, 230, 50, 50, "round"],
-  ["dpad_down", "▼", 95, 280, 50, 50, "round"],
-  ["triangle", "△", 600, 130, 50, 50, "round"],
-  ["square", "□", 545, 185, 50, 50, "round"],
-  ["circle", "○", 655, 185, 50, 50, "round"],
-  ["cross", "✕", 600, 240, 50, 50, "round"],
-  ["left_stick_up", "L▲", 75, 330, 50, 32, "round"],
-  ["left_stick_left", "L◀", 25, 365, 50, 32, "round"],
-  ["left_stick_right", "L▶", 125, 365, 50, 32, "round"],
-  ["left_stick_down", "L▼", 75, 400, 50, 32, "round"],
-  ["l3", "L3", 78, 362, 44, 36, "round"],
-  ["right_stick_up", "R▲", 595, 330, 50, 32, "round"],
-  ["right_stick_left", "R◀", 545, 365, 50, 32, "round"],
-  ["right_stick_right", "R▶", 645, 365, 50, 32, "round"],
-  ["right_stick_down", "R▼", 595, 400, 50, 32, "round"],
-  ["r3", "R3", 598, 362, 44, 36, "round"],
+  ["l2", "L2", 15, 40, 22, 18, "pill"],
+  ["l1", "L1", 28.8, 29.7, 22, 11, "pill"],
+  ["r1", "R1", 98.8, 29.7, 22, 11, "pill"],
+  ["r2", "R2", 113, 40, 22, 18, "pill"],
+  ["create", "Create", 36.5, 36, 12, 10, "pill"],
+  ["options", "Options", 91.5, 36, 12, 10, "pill"],
+  ["touchpad", "Touchpad", 64, 40.5, 45, 26, "rect"],
+  ["ps", "PS", 64, 70, 13, 13, "round"],
+  ["mute", "Mute", 64, 57, 12, 8, "pill"],
+  ["dpad_up", "▲", 29, 42.7, 11, 11, "round"],
+  ["dpad_left", "◀", 22.7, 49, 11, 11, "round"],
+  ["dpad_right", "▶", 35.2, 49, 11, 11, "round"],
+  ["dpad_down", "▼", 29, 55.2, 11, 11, "round"],
+  ["triangle", "△", 99, 40, 12, 12, "round"],
+  ["square", "□", 91, 48, 12, 12, "round"],
+  ["circle", "○", 107, 48, 12, 12, "round"],
+  ["cross", "✕", 99, 56, 12, 12, "round"],
+  ["left_stick_up", "L▲", 45.5, 51.5, 9, 9, "round"],
+  ["left_stick_left", "L◀", 32, 64.5, 9, 9, "round"],
+  ["left_stick_right", "L▶", 59, 64.5, 9, 9, "round"],
+  ["left_stick_down", "L▼", 45.5, 77.5, 9, 9, "round"],
+  ["l3", "L3", 45.5, 64.5, 13, 13, "round"],
+  ["right_stick_up", "R▲", 82.5, 51.5, 9, 9, "round"],
+  ["right_stick_left", "R◀", 69, 64.5, 9, 9, "round"],
+  ["right_stick_right", "R▶", 96, 64.5, 9, 9, "round"],
+  ["right_stick_down", "R▼", 82.5, 77.5, 9, 9, "round"],
+  ["r3", "R3", 82.5, 64.5, 13, 13, "round"],
 ];
 
 const FACES = new Set(["triangle", "circle", "cross", "square"]);
+let svgMarkup = "";
 
-function box(x, y, w, h) {
-  return `left:${pct(x, SCALE_W)};top:${pct(y, SCALE_H)};width:${pct(w, SCALE_W)};height:${pct(h, SCALE_H)}`;
+function box(cx, cy, w, h) {
+  return `left:${pct(cx - w / 2)};top:${pct(cy - h / 2)};width:${pct(w)};height:${pct(h)}`;
 }
 
 function renderController() {
   const container = document.getElementById("controller");
-  const decor = `
-    <div class="pad-body"></div>
-    <div class="dpad-plate" style="${box(33, 172, 174, 174)}"></div>
-    <div class="stick-ring" style="${box(18, 322, 172, 118)}"></div>
-    <div class="stick-ring" style="${box(570, 322, 172, 118)}"></div>`;
-  const controls = LAYOUT.map(([input, label, x, y, w, h, shape]) => {
+  const controls = LAYOUT.map(([input, label, cx, cy, w, h, shape]) => {
     const entry = working.mappings[input];
     const action = working.actions[input];
     const mapped = entry || action ? " mapped" : "";
@@ -94,11 +89,11 @@ function renderController() {
     const summary = mappingSummary(entry, action);
     const sumText = summary === "-" ? "" : summary;
     return `<button type="button" class="ctl ${shape}${mapped}${selectedClass}${face}" data-input="${input}"
-      style="${box(x, y, w, h)}">
+      style="${box(cx, cy, w, h)}">
       <span class="label">${label}</span><span class="sum">${sumText}</span>
     </button>`;
   }).join("");
-  container.innerHTML = decor + controls;
+  container.innerHTML = `<div class="pad-svg">${svgMarkup}</div>` + controls;
   container.querySelectorAll(".ctl").forEach((node) => {
     node.addEventListener("click", () => { selected = node.dataset.input; renderController(); renderEditor(); });
   });
@@ -400,6 +395,9 @@ async function load() {
   mapping = await api("/api/mapping");
   settings = await api("/api/settings");
   working = JSON.parse(JSON.stringify(mapping));
+  if (!svgMarkup) {
+    svgMarkup = await (await fetch("/assets/dualsense.svg")).text();
+  }
   document.getElementById("mapping-enabled").checked = !!working.enabled;
   renderController();
   renderEditor();
