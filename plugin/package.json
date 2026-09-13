@@ -1,0 +1,20 @@
+{
+  "name": "@xhang98/rebind-me",
+  "version": "0.1.0",
+  "description": "opencode plugin that forwards session events to the Rebind Me bridge",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xhang1108/rebind-me"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "rebind-me"
+  ]
+}
