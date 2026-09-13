@@ -11,8 +11,11 @@ Overlapped / non-blocking reads and reconnect handling land in stage 3.
 from __future__ import annotations
 
 import ctypes
+import threading
 from ctypes import wintypes
 from dataclasses import dataclass
+
+from .errors import RebindError
 
 DUALSENSE_VENDOR_ID = 0x054C
 DUALSENSE_PRODUCT_ID = 0x0CE6
@@ -29,7 +32,17 @@ GENERIC_WRITE = 0x40000000
 FILE_SHARE_READ = 0x01
 FILE_SHARE_WRITE = 0x02
 OPEN_EXISTING = 3
+FILE_FLAG_OVERLAPPED = 0x40000000
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+ERROR_ACCESS_DENIED = 5
+ERROR_SHARING_VIOLATION = 32
+ERROR_IO_PENDING = 997
+WAIT_OBJECT_0 = 0
+WAIT_TIMEOUT = 258
+WAIT_FAILED = 0xFFFFFFFF
+
+ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
 
 
 class GUID(ctypes.Structure):
@@ -63,6 +76,16 @@ class HIDD_ATTRIBUTES(ctypes.Structure):
         ("VendorID", wintypes.USHORT),
         ("ProductID", wintypes.USHORT),
         ("VersionNumber", wintypes.USHORT),
+    ]
+
+
+class OVERLAPPED(ctypes.Structure):
+    _fields_ = [
+        ("Internal", ULONG_PTR),
+        ("InternalHigh", ULONG_PTR),
+        ("Offset", wintypes.DWORD),
+        ("OffsetHigh", wintypes.DWORD),
+        ("hEvent", wintypes.HANDLE),
     ]
 
 
@@ -139,9 +162,32 @@ _kernel32.ReadFile.argtypes = (
     ctypes.c_void_p,
     wintypes.DWORD,
     ctypes.POINTER(wintypes.DWORD),
+    ctypes.POINTER(OVERLAPPED),
+)
+_kernel32.WriteFile.argtypes = (
     ctypes.c_void_p,
+    ctypes.c_void_p,
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD),
+    ctypes.POINTER(OVERLAPPED),
 )
 _kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+_kernel32.CreateEventW.restype = wintypes.HANDLE
+_kernel32.CreateEventW.argtypes = (
+    ctypes.c_void_p,
+    wintypes.BOOL,
+    wintypes.BOOL,
+    wintypes.LPCWSTR,
+)
+_kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+_kernel32.WaitForSingleObject.restype = wintypes.DWORD
+_kernel32.GetOverlappedResult.argtypes = (
+    ctypes.c_void_p,
+    ctypes.POINTER(OVERLAPPED),
+    ctypes.POINTER(wintypes.DWORD),
+    wintypes.BOOL,
+)
+_kernel32.CancelIo.argtypes = (ctypes.c_void_p,)
 
 
 @dataclass(frozen=True)
@@ -155,14 +201,14 @@ class HidInterface:
     output_report_length: int
 
 
-def _open_path(path: str, access: int) -> int:
+def _open_path(path: str, access: int, flags: int = 0) -> int:
     handle = _kernel32.CreateFileW(
         path,
         access,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         None,
         OPEN_EXISTING,
-        0,
+        flags,
         None,
     )
     if not handle or handle == INVALID_HANDLE_VALUE:
@@ -300,13 +346,191 @@ def find_dualsense() -> HidInterface | None:
     return interfaces[0] if interfaces else None
 
 
+class WindowsHidDevice:
+    """Overlapped, interruptible HID handle for one DualSense interface."""
+
+    def __init__(self, interface: HidInterface):
+        self.interface = interface
+        self.input_report_length = interface.input_report_length
+        self.output_report_length = interface.output_report_length
+        self._handle = _open_path(
+            interface.path, GENERIC_READ | GENERIC_WRITE, FILE_FLAG_OVERLAPPED
+        )
+        self._event = _kernel32.CreateEventW(None, False, False, None)
+        if not self._event:
+            _kernel32.CloseHandle(self._handle)
+            self._handle = None
+            raise OSError(ctypes.get_last_error(), "CreateEventW failed")
+
+    def read(self, timeout_ms: int) -> bytes | None:
+        """Read one report; ``None`` on timeout (so the caller can poll stop)."""
+        buffer = ctypes.create_string_buffer(self.input_report_length)
+        read = wintypes.DWORD(0)
+        overlapped = OVERLAPPED()
+        overlapped.hEvent = self._event
+        if not _kernel32.ReadFile(
+            self._handle,
+            buffer,
+            self.input_report_length,
+            ctypes.byref(read),
+            ctypes.byref(overlapped),
+        ):
+            error = ctypes.get_last_error()
+            if error != ERROR_IO_PENDING:
+                raise OSError(error, "ReadFile failed")
+            wait = _kernel32.WaitForSingleObject(self._event, timeout_ms)
+            if wait == WAIT_TIMEOUT:
+                _kernel32.CancelIo(self._handle)
+                _kernel32.WaitForSingleObject(self._event, 1000)
+                return None
+            if wait != WAIT_OBJECT_0:
+                raise OSError(ctypes.get_last_error(), "WaitForSingleObject failed")
+            if not _kernel32.GetOverlappedResult(
+                self._handle, ctypes.byref(overlapped), ctypes.byref(read), False
+            ):
+                raise OSError(ctypes.get_last_error(), "GetOverlappedResult failed")
+        return buffer.raw[: read.value]
+
+    def write(self, data: bytes) -> None:
+        payload = bytes(data)
+        buffer = ctypes.create_string_buffer(payload, len(payload))
+        written = wintypes.DWORD(0)
+        overlapped = OVERLAPPED()
+        overlapped.hEvent = self._event
+        if not _kernel32.WriteFile(
+            self._handle,
+            buffer,
+            len(payload),
+            ctypes.byref(written),
+            ctypes.byref(overlapped),
+        ):
+            error = ctypes.get_last_error()
+            if error != ERROR_IO_PENDING:
+                raise OSError(error, "WriteFile failed")
+            wait = _kernel32.WaitForSingleObject(self._event, 1000)
+            if wait != WAIT_OBJECT_0:
+                _kernel32.CancelIo(self._handle)
+                raise OSError(ctypes.get_last_error(), "WriteFile timed out")
+            if not _kernel32.GetOverlappedResult(
+                self._handle, ctypes.byref(overlapped), ctypes.byref(written), False
+            ):
+                raise OSError(ctypes.get_last_error(), "GetOverlappedResult failed")
+
+    def close(self) -> None:
+        if self._event:
+            _kernel32.CloseHandle(self._event)
+            self._event = None
+        if self._handle:
+            _kernel32.CloseHandle(self._handle)
+            self._handle = None
+
+
+class HidLoop:
+    """Reconnecting reader. Device access is injected so tests can fake it.
+
+    ``provider`` returns an object with ``read(timeout_ms)``, ``write(bytes)``,
+    ``close()`` and an ``interface`` attribute, or raises ``OSError``.
+    """
+
+    def __init__(
+        self,
+        provider: object,
+        on_report: object,
+        on_status: object | None = None,
+        retry_seconds: float = 1.0,
+        read_timeout_ms: int = 200,
+    ):
+        self._provider = provider
+        self._on_report = on_report
+        self._on_status = on_status or (lambda state, detail=None: None)
+        self._retry_seconds = retry_seconds
+        self._read_timeout_ms = read_timeout_ms
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.device = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, name="rebind-hid", daemon=True)
+        self._thread.start()
+
+    def stop(self, timeout: float = 2.0) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout)
+        self._drop_device()
+
+    def poll(self) -> None:
+        """One connect / read step. Exposed for deterministic tests."""
+        if self.device is None:
+            try:
+                self.device = self._provider()  # type: ignore[operator]
+            except OSError as error:
+                state = (
+                    "busy"
+                    if getattr(error, "winerror", None) in (ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION)
+                    else "disconnected"
+                )
+                self._on_status(state, error)
+                return
+            except Exception as error:  # noqa: BLE001
+                self._on_status("disconnected", error)
+                return
+            self._on_status("connected", self.device.interface)
+        try:
+            report = self.device.read(self._read_timeout_ms)
+        except OSError as error:
+            self._on_status("disconnected", error)
+            self._drop_device()
+            return
+        if report:
+            self._on_report(report, self.device)
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            before = self.device
+            self.poll()
+            if self.device is None:
+                self._stop.wait(self._retry_seconds)
+            elif self.device is before is not None:
+                continue
+
+    def write(self, data: bytes) -> None:
+        device = self.device
+        if device is None:
+            raise RebindError("DEVICE_NOT_CONNECTED", "no DualSense connected")
+        try:
+            device.write(data)
+        except OSError as error:
+            self._drop_device()
+            raise RebindError("DEVICE_IO_ERROR", str(error)) from error
+
+    def _drop_device(self) -> None:
+        device, self.device = self.device, None
+        if device is not None:
+            try:
+                device.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def open_first_device() -> WindowsHidDevice:
+    """Provider for :class:`HidLoop`; re-enumerates on every call."""
+    interface = find_dualsense()
+    if interface is None:
+        raise FileNotFoundError(2, "no DualSense over USB")
+    return WindowsHidDevice(interface)
+
+
 __all__ = [
     "DUALSENSE_PRODUCT_IDS",
     "DUALSENSE_VENDOR_ID",
     "HidInterface",
+    "HidLoop",
+    "WindowsHidDevice",
     "close_device",
     "enumerate_interfaces",
     "find_dualsense",
     "open_device",
+    "open_first_device",
     "read_report",
 ]
