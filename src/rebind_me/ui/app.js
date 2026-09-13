@@ -43,48 +43,62 @@ const pct = (value, total) => `${((value / total) * 100).toFixed(3)}%`;
 
 // (input, label, x, y, w, h, shape) in a 760x470 space.
 const LAYOUT = [
-  ["l2", "L2", 20, 10, 90, 40, "pill"],
-  ["l1", "L1", 120, 10, 90, 40, "pill"],
-  ["r1", "R1", 550, 10, 90, 40, "pill"],
-  ["r2", "R2", 650, 10, 90, 40, "pill"],
-  ["create", "Create", 250, 18, 70, 28, "pill"],
-  ["options", "Options", 440, 18, 70, 28, "pill"],
-  ["touchpad", "Touchpad", 270, 60, 220, 120, "rect"],
-  ["ps", "PS", 360, 195, 40, 40, "round"],
-  ["mute", "Mute", 360, 245, 40, 26, "pill"],
-  ["dpad_up", "▲", 95, 165, 52, 52, "round"],
-  ["dpad_left", "◀", 35, 225, 52, 52, "round"],
-  ["dpad_right", "▶", 155, 225, 52, 52, "round"],
-  ["dpad_down", "▼", 95, 285, 52, 52, "round"],
-  ["triangle", "△", 585, 115, 52, 52, "round"],
-  ["square", "□", 520, 180, 52, 52, "round"],
-  ["circle", "○", 650, 180, 52, 52, "round"],
-  ["cross", "✕", 585, 245, 52, 52, "round"],
-  ["left_stick_up", "L▲", 90, 330, 44, 30, "round"],
-  ["left_stick_left", "L◀", 40, 362, 44, 30, "round"],
-  ["left_stick_right", "L▶", 140, 362, 44, 30, "round"],
-  ["left_stick_down", "L▼", 90, 394, 44, 30, "round"],
-  ["l3", "L3", 90, 362, 44, 30, "round"],
-  ["right_stick_up", "R▲", 580, 330, 44, 30, "round"],
-  ["right_stick_left", "R◀", 530, 362, 44, 30, "round"],
-  ["right_stick_right", "R▶", 630, 362, 44, 30, "round"],
-  ["right_stick_down", "R▼", 580, 394, 44, 30, "round"],
-  ["r3", "R3", 580, 362, 44, 30, "round"],
+  ["l2", "L2", 30, 6, 100, 34, "pill"],
+  ["l1", "L1", 140, 6, 100, 34, "pill"],
+  ["r1", "R1", 520, 6, 100, 34, "pill"],
+  ["r2", "R2", 630, 6, 100, 34, "pill"],
+  ["create", "Create", 300, 52, 64, 24, "pill"],
+  ["options", "Options", 396, 52, 64, 24, "pill"],
+  ["touchpad", "Touchpad", 300, 84, 160, 110, "rect"],
+  ["ps", "PS", 360, 204, 44, 44, "round"],
+  ["mute", "Mute", 362, 252, 40, 22, "pill"],
+  ["dpad_up", "▲", 95, 180, 50, 50, "round"],
+  ["dpad_left", "◀", 45, 230, 50, 50, "round"],
+  ["dpad_right", "▶", 145, 230, 50, 50, "round"],
+  ["dpad_down", "▼", 95, 280, 50, 50, "round"],
+  ["triangle", "△", 600, 130, 50, 50, "round"],
+  ["square", "□", 545, 185, 50, 50, "round"],
+  ["circle", "○", 655, 185, 50, 50, "round"],
+  ["cross", "✕", 600, 240, 50, 50, "round"],
+  ["left_stick_up", "L▲", 75, 330, 50, 32, "round"],
+  ["left_stick_left", "L◀", 25, 365, 50, 32, "round"],
+  ["left_stick_right", "L▶", 125, 365, 50, 32, "round"],
+  ["left_stick_down", "L▼", 75, 400, 50, 32, "round"],
+  ["l3", "L3", 78, 362, 44, 36, "round"],
+  ["right_stick_up", "R▲", 595, 330, 50, 32, "round"],
+  ["right_stick_left", "R◀", 545, 365, 50, 32, "round"],
+  ["right_stick_right", "R▶", 645, 365, 50, 32, "round"],
+  ["right_stick_down", "R▼", 595, 400, 50, 32, "round"],
+  ["r3", "R3", 598, 362, 44, 36, "round"],
 ];
+
+const FACES = new Set(["triangle", "circle", "cross", "square"]);
+
+function box(x, y, w, h) {
+  return `left:${pct(x, SCALE_W)};top:${pct(y, SCALE_H)};width:${pct(w, SCALE_W)};height:${pct(h, SCALE_H)}`;
+}
 
 function renderController() {
   const container = document.getElementById("controller");
-  container.innerHTML = LAYOUT.map(([input, label, x, y, w, h, shape]) => {
+  const decor = `
+    <div class="pad-body"></div>
+    <div class="dpad-plate" style="${box(33, 172, 174, 174)}"></div>
+    <div class="stick-ring" style="${box(18, 322, 172, 118)}"></div>
+    <div class="stick-ring" style="${box(570, 322, 172, 118)}"></div>`;
+  const controls = LAYOUT.map(([input, label, x, y, w, h, shape]) => {
     const entry = working.mappings[input];
     const action = working.actions[input];
     const mapped = entry || action ? " mapped" : "";
     const selectedClass = input === selected ? " selected" : "";
-    const center = input === "l3" || input === "r3" ? " center" : "";
-    return `<button type="button" class="ctl ${shape}${mapped}${selectedClass}${center}" data-input="${input}"
-      style="left:${pct(x, SCALE_W)};top:${pct(y, SCALE_H)};width:${pct(w, SCALE_W)};height:${pct(h, SCALE_H)}">
-      <span class="label">${label}</span><span class="sum">${mappingSummary(entry, action)}</span>
+    const face = FACES.has(input) ? ` face-${input}` : "";
+    const summary = mappingSummary(entry, action);
+    const sumText = summary === "-" ? "" : summary;
+    return `<button type="button" class="ctl ${shape}${mapped}${selectedClass}${face}" data-input="${input}"
+      style="${box(x, y, w, h)}">
+      <span class="label">${label}</span><span class="sum">${sumText}</span>
     </button>`;
   }).join("");
+  container.innerHTML = decor + controls;
   container.querySelectorAll(".ctl").forEach((node) => {
     node.addEventListener("click", () => { selected = node.dataset.input; renderController(); renderEditor(); });
   });
@@ -354,16 +368,19 @@ async function saveTriggers() {
 
 // -- status / theme ----------------------------------------------------
 async function pollStatus() {
+  const deviceBadge = document.getElementById("status-device");
   try {
     const status = await api("/api/status");
-    document.getElementById("status-device").textContent = `device: ${status.device}`;
+    deviceBadge.textContent = `device: ${status.device}`;
+    deviceBadge.classList.toggle("connected", status.device === "connected");
     document.getElementById("status-state").textContent = `state: ${status.status}`;
     const pressed = new Set(status.inputs || []);
     document.querySelectorAll("#controller .ctl").forEach((node) => {
       node.classList.toggle("pressed", pressed.has(node.dataset.input));
     });
   } catch (error) {
-    document.getElementById("status-device").textContent = "device: offline";
+    deviceBadge.textContent = "device: offline";
+    deviceBadge.classList.remove("connected");
   }
 }
 
