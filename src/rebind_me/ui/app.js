@@ -53,45 +53,33 @@ const PATH_INPUT = {
   9: "r1",
   10: "l1",
   13: "circle",
-  14: "ps",
+  14: "mute",
   15: "dpad_down",
   16: "dpad_up",
   17: "dpad_left",
   18: "dpad_right",
   19: "options",
   20: "create",
-  21: "mute",
+  21: "ps",
 };
 
-// Invisible hit zones over the SVG glyphs (their outlines are hollow, so the
-// centre would otherwise miss the path). No artwork, just click targets.
-const HIT_ZONES = [
-  ["triangle", 99, 40, 13, 13],
-  ["circle", 107, 48, 13, 13],
-  ["cross", 99, 56, 13, 13],
-  ["square", 91, 48, 13, 13],
-  ["dpad_up", 29, 42.7, 12, 12],
-  ["dpad_down", 29, 55.2, 12, 12],
-  ["dpad_left", 22.7, 49, 12, 12],
-  ["dpad_right", 35.2, 49, 12, 12],
-  ["touchpad", 64, 40.5, 45, 26],
-  ["create", 36.5, 36, 12, 11],
-  ["options", 91.5, 36, 12, 11],
-  ["l1", 28.8, 29.6, 17, 10],
-  ["r1", 98.8, 29.6, 17, 10],
-  ["ps", 64, 70, 14, 12],
-  ["mute", 64, 57, 14, 9],
-  ["l3", 45.5, 64.5, 15, 15],
-  ["r3", 82.5, 64.5, 15, 15],
-  ["left_stick_up", 45.5, 52.5, 9, 9],
-  ["left_stick_down", 45.5, 76.5, 9, 9],
-  ["left_stick_left", 33.5, 64.5, 9, 9],
-  ["left_stick_right", 57.5, 64.5, 9, 9],
-  ["right_stick_up", 82.5, 52.5, 9, 9],
-  ["right_stick_down", 82.5, 76.5, 9, 9],
-  ["right_stick_left", 70.5, 64.5, 9, 9],
-  ["right_stick_right", 94.5, 64.5, 9, 9],
+// Thin glyphs get an invisible thicker stroke so they are easy to hit.
+const THIN_INPUTS = new Set(["ps", "mute", "create", "options"]);
+
+// The artwork has no stick-direction glyphs, so these small transparent
+// targets around each stick remain (everything else uses the SVG shapes).
+const DIRECTION_ZONES = [
+  ["left_stick_up", 45.5, 52.5],
+  ["left_stick_down", 45.5, 76.5],
+  ["left_stick_left", 33.5, 64.5],
+  ["left_stick_right", 57.5, 64.5],
+  ["right_stick_up", 82.5, 52.5],
+  ["right_stick_down", 82.5, 76.5],
+  ["right_stick_left", 70.5, 64.5],
+  ["right_stick_right", 94.5, 64.5],
 ];
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 let svgMarkup = "";
 
@@ -121,7 +109,8 @@ function tagSvg(container) {
     if (!input) return;
     path.dataset.input = input;
     path.classList.add("hit");
-    const hint = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    if (THIN_INPUTS.has(input)) path.style.strokeWidth = "5";
+    const hint = document.createElementNS(SVG_NS, "title");
     const summary = mappingSummary(working.mappings[input], working.actions[input]);
     hint.textContent = summary === "-" ? input : `${input}: ${summary}`;
     path.appendChild(hint);
@@ -129,40 +118,45 @@ function tagSvg(container) {
   });
 }
 
-function hoverPath(input, on) {
-  document.querySelectorAll(`.pad-svg svg path[data-input="${input}"]`).forEach((path) => {
-    path.classList.toggle("hover", on);
+function renderDirs(wrap) {
+  const html = DIRECTION_ZONES.map(([input, cx, cy]) =>
+    `<button type="button" class="dir" data-input="${input}" style="${box(cx, cy, 9, 9)}" title="${input}"></button>`
+  ).join("");
+  wrap.insertAdjacentHTML("beforeend", html);
+  wrap.querySelectorAll(".dir").forEach((node) => {
+    node.addEventListener("click", () => selectInput(node.dataset.input));
   });
 }
 
-function renderZones(wrap) {
-  const html = HIT_ZONES.map(([input, cx, cy, w, h]) =>
-    `<button type="button" class="zone" data-input="${input}" style="${box(cx, cy, w, h)}" title="${input}"></button>`
-  ).join("");
-  wrap.insertAdjacentHTML("beforeend", html);
-  wrap.querySelectorAll(".zone").forEach((node) => {
-    const input = node.dataset.input;
-    node.addEventListener("click", () => selectInput(input));
-    node.addEventListener("mouseenter", () => hoverPath(input, true));
-    node.addEventListener("mouseleave", () => hoverPath(input, false));
-  });
+function drawTriggers(svg) {
+  // L2/R2 are not in the artwork; draw them in the same monochrome style.
+  const make = (input, x) => {
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", x);
+    rect.setAttribute("y", 16);
+    rect.setAttribute("width", 26);
+    rect.setAttribute("height", 8);
+    rect.setAttribute("rx", 4);
+    rect.setAttribute("ry", 4);
+    rect.setAttribute("data-input", input);
+    rect.setAttribute("class", "hit");
+    rect.addEventListener("click", () => selectInput(input));
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent = input;
+    rect.appendChild(title);
+    svg.appendChild(rect);
+  };
+  make("l2", 16);
+  make("r2", 86);
 }
 
 function renderController() {
   const container = document.getElementById("controller");
-  // The artwork has no L2/R2 (they sit behind the shoulders), so draw them.
-  container.innerHTML = `
-    <div class="pad-wrap">
-      <div class="pad-svg">${svgMarkup}</div>
-      <button type="button" class="trigger left" data-input="l2" style="${box(15, 19, 34, 13)}">L2</button>
-      <button type="button" class="trigger right" data-input="r2" style="${box(113, 19, 34, 13)}">R2</button>
-    </div>`;
+  container.innerHTML = `<div class="pad-wrap"><div class="pad-svg">${svgMarkup}</div></div>`;
   const wrap = container.querySelector(".pad-wrap");
   tagSvg(container);
-  renderZones(wrap);
-  wrap.querySelectorAll(".trigger").forEach((node) => {
-    node.addEventListener("click", () => selectInput(node.dataset.input));
-  });
+  drawTriggers(container.querySelector(".pad-svg svg"));
+  renderDirs(wrap);
   refreshMap();
 }
 
