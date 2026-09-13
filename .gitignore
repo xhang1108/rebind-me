@@ -33,3 +33,6 @@ Desktop.ini
 
 # Docs
 docs/
+
+# Tooling output
+.openchamber/

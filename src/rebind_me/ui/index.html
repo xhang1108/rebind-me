@@ -24,14 +24,22 @@
     <div id="message" class="message" hidden></div>
 
     <main>
-      <details open>
-        <summary>Button mappings</summary>
-        <div class="toolbar">
-          <label class="inline"><input type="checkbox" id="mapping-enabled" /> Enabled</label>
-          <button id="save-mapping">Save mappings</button>
+      <section class="card">
+        <div class="card-head">
+          <h2>Controller</h2>
+          <div class="toolbar">
+            <label class="inline"><input type="checkbox" id="mapping-enabled" /> Enabled</label>
+            <button id="save-mapping">Save mappings</button>
+          </div>
         </div>
-        <div id="mappings" class="rows"></div>
-      </details>
+        <p class="sub">Click a button to edit it. Click <strong>Record</strong>, then press a key to map it.</p>
+        <div id="controller" class="controller"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Selected: <span id="editor-name">-</span></h2></div>
+        <div id="editor" class="editor"></div>
+      </section>
 
       <details>
         <summary>Touchpad</summary>

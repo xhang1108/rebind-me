@@ -1,12 +1,17 @@
 import {
   ACTIONS, EFFECTS, INPUT_NAMES, MODES, MOUSE_CODES, SCROLL_CODES, STATUS_STATES,
-  clamp, hexToRgb, mappingEntryFromForm, mappingFormFromEntry, rgbToHex,
+  appendKey, clamp, hexToRgb, mappingEntryFromForm, mappingFormFromEntry,
+  mappingSummary, rgbToHex,
 } from "./model.js";
 
 let mapping = null;
 let settings = null;
+let working = null;
+let selected = "cross";
 
 const message = document.getElementById("message");
+const SCALE_W = 760;
+const SCALE_H = 470;
 
 function showMessage(text, kind) {
   message.textContent = text;
@@ -30,24 +35,67 @@ async function api(path, method = "GET", body) {
   return envelope.data;
 }
 
-function options(values, selected) {
-  return values.map((value) => `<option value="${value}"${value === selected ? " selected" : ""}>${value}</option>`).join("");
+function options(values, selected_value) {
+  return values.map((value) => `<option value="${value}"${value === selected_value ? " selected" : ""}>${value || "(none)"}</option>`).join("");
 }
 
-// -- mapping -----------------------------------------------------------
-function optionRow(state, light) {
-  const color = rgbToHex(light.color);
-  return `<div class="row" data-light="${state}">
-    <span class="name">${state}</span>
-    <input type="color" data-role="color" value="${color}" />
-    <select data-role="effect">${options(EFFECTS, light.effect)}</select>
-    <span class="inline">speed <input type="number" min="1" max="5" data-role="speed" value="${light.speed}" /></span>
-  </div>`;
+const pct = (value, total) => `${((value / total) * 100).toFixed(3)}%`;
+
+// (input, label, x, y, w, h, shape) in a 760x470 space.
+const LAYOUT = [
+  ["l2", "L2", 20, 10, 90, 40, "pill"],
+  ["l1", "L1", 120, 10, 90, 40, "pill"],
+  ["r1", "R1", 550, 10, 90, 40, "pill"],
+  ["r2", "R2", 650, 10, 90, 40, "pill"],
+  ["create", "Create", 250, 18, 70, 28, "pill"],
+  ["options", "Options", 440, 18, 70, 28, "pill"],
+  ["touchpad", "Touchpad", 270, 60, 220, 120, "rect"],
+  ["ps", "PS", 360, 195, 40, 40, "round"],
+  ["mute", "Mute", 360, 245, 40, 26, "pill"],
+  ["dpad_up", "▲", 95, 165, 52, 52, "round"],
+  ["dpad_left", "◀", 35, 225, 52, 52, "round"],
+  ["dpad_right", "▶", 155, 225, 52, 52, "round"],
+  ["dpad_down", "▼", 95, 285, 52, 52, "round"],
+  ["triangle", "△", 585, 115, 52, 52, "round"],
+  ["square", "□", 520, 180, 52, 52, "round"],
+  ["circle", "○", 650, 180, 52, 52, "round"],
+  ["cross", "✕", 585, 245, 52, 52, "round"],
+  ["left_stick_up", "L▲", 90, 330, 44, 30, "round"],
+  ["left_stick_left", "L◀", 40, 362, 44, 30, "round"],
+  ["left_stick_right", "L▶", 140, 362, 44, 30, "round"],
+  ["left_stick_down", "L▼", 90, 394, 44, 30, "round"],
+  ["l3", "L3", 90, 362, 44, 30, "round"],
+  ["right_stick_up", "R▲", 580, 330, 44, 30, "round"],
+  ["right_stick_left", "R◀", 530, 362, 44, 30, "round"],
+  ["right_stick_right", "R▶", 630, 362, 44, 30, "round"],
+  ["right_stick_down", "R▼", 580, 394, 44, 30, "round"],
+  ["r3", "R3", 580, 362, 44, 30, "round"],
+];
+
+function renderController() {
+  const container = document.getElementById("controller");
+  container.innerHTML = LAYOUT.map(([input, label, x, y, w, h, shape]) => {
+    const entry = working.mappings[input];
+    const action = working.actions[input];
+    const mapped = entry || action ? " mapped" : "";
+    const selectedClass = input === selected ? " selected" : "";
+    const center = input === "l3" || input === "r3" ? " center" : "";
+    return `<button type="button" class="ctl ${shape}${mapped}${selectedClass}${center}" data-input="${input}"
+      style="left:${pct(x, SCALE_W)};top:${pct(y, SCALE_H)};width:${pct(w, SCALE_W)};height:${pct(h, SCALE_H)}">
+      <span class="label">${label}</span><span class="sum">${mappingSummary(entry, action)}</span>
+    </button>`;
+  }).join("");
+  container.querySelectorAll(".ctl").forEach((node) => {
+    node.addEventListener("click", () => { selected = node.dataset.input; renderController(); renderEditor(); });
+  });
 }
 
-function mappingRow(name) {
-  const action = (mapping.actions || {})[name];
-  const entry = (mapping.mappings || {})[name];
+function renderEditor() {
+  document.getElementById("editor-name").textContent = selected || "-";
+  if (!selected) { document.getElementById("editor").innerHTML = "<p class='sub'>Select a button.</p>"; return; }
+
+  const action = working.actions[selected];
+  const entry = working.mappings[selected];
   let form;
   if (action) {
     form = { kind: "action", mode: "single", sequenceText: "", mouse: MOUSE_CODES[0], scroll: SCROLL_CODES[0], repeatDelay: 300, repeatInterval: 50, toggleInitial: "off" };
@@ -58,91 +106,136 @@ function mappingRow(name) {
     form.action = ACTIONS[0];
     form.process = "";
   }
-  return `<div class="row" data-input="${name}">
-    <span class="name">${name}</span>
-    <select data-role="type">
-      <option value="none"${form.kind === "none" ? " selected" : ""}>none</option>
-      <option value="sequence"${form.kind === "sequence" ? " selected" : ""}>keys</option>
-      <option value="mouse"${form.kind === "mouse" ? " selected" : ""}>mouse</option>
-      <option value="scroll"${form.kind === "scroll" ? " selected" : ""}>scroll</option>
-      <option value="action"${form.kind === "action" ? " selected" : ""}>action</option>
-    </select>
-    <select data-role="mode">${options(MODES, form.mode)}</select>
-    <span class="value">
-      <input data-role="sequence" size="28" placeholder="ControlLeft, KeyK; KeyL" value="${form.sequenceText}" />
-      <select data-role="mouse">${options(MOUSE_CODES, form.mouse)}</select>
-      <select data-role="scroll">${options(SCROLL_CODES, form.scroll)}</select>
-      <span data-role="action-wrap" class="inline">
-        <select data-role="action">${options(ACTIONS, form.action)}</select>
-        <input data-role="process" placeholder="process.exe" value="${form.process}" />
+
+  const editor = document.getElementById("editor");
+  editor.innerHTML = `
+    <div class="line">
+      <label>Type <select data-role="type">
+        <option value="none"${form.kind === "none" ? " selected" : ""}>none</option>
+        <option value="sequence"${form.kind === "sequence" ? " selected" : ""}>keys</option>
+        <option value="mouse"${form.kind === "mouse" ? " selected" : ""}>mouse</option>
+        <option value="scroll"${form.kind === "scroll" ? " selected" : ""}>scroll</option>
+        <option value="action"${form.kind === "action" ? " selected" : ""}>action</option>
+      </select></label>
+      <label>Mode <select data-role="mode">${options(MODES, form.mode)}</select></label>
+      <span data-role="toggle-wrap" class="inline">Initial
+        <select data-role="toggleInitial"><option value="off"${form.toggleInitial === "off" ? " selected" : ""}>off</option><option value="on"${form.toggleInitial === "on" ? " selected" : ""}>on</option></select>
       </span>
-      <span data-role="repeat-wrap" class="inline">delay <input type="number" data-role="repeatDelay" value="${form.repeatDelay}" /> interval <input type="number" data-role="repeatInterval" value="${form.repeatInterval}" /></span>
-      <span data-role="toggle-wrap" class="inline">initial <select data-role="toggleInitial"><option value="off"${form.toggleInitial === "off" ? " selected" : ""}>off</option><option value="on"${form.toggleInitial === "on" ? " selected" : ""}>on</option></select></span>
-    </span>
-  </div>`;
+    </div>
+    <div data-role="seq-wrap">
+      <textarea data-role="sequence" placeholder="ControlLeft, KeyK; KeyL">${form.sequenceText}</textarea>
+      <div class="line">
+        <button type="button" id="record-key">Record key</button>
+        <button type="button" id="record-segment" class="secondary">+ chord segment</button>
+        <button type="button" id="clear-seq" class="secondary">Clear</button>
+        <span class="sub">Chord: separate keys with commas, segments with semicolons.</span>
+      </div>
+    </div>
+    <div class="line" data-role="mouse-wrap"><label>Mouse <select data-role="mouse">${options(MOUSE_CODES, form.mouse)}</select></label></div>
+    <div class="line" data-role="scroll-wrap"><label>Scroll <select data-role="scroll">${options(SCROLL_CODES, form.scroll)}</select></label></div>
+    <div class="line" data-role="action-wrap">
+      <label>Action <select data-role="action">${options(ACTIONS, form.action)}</select></label>
+      <label>Process <input data-role="process" placeholder="process.exe" value="${form.process}" /></label>
+    </div>
+    <div class="line" data-role="repeat-wrap">
+      <label>Delay ms <input type="number" min="10" max="2000" data-role="repeatDelay" value="${form.repeatDelay}" /></label>
+      <label>Interval ms <input type="number" min="10" max="2000" data-role="repeatInterval" value="${form.repeatInterval}" /></label>
+    </div>`;
+
+  editor.querySelector('[data-role="type"]').addEventListener("change", () => { syncEditor(); applyEditor(); });
+  editor.querySelector('[data-role="mode"]').addEventListener("change", () => { syncEditor(); applyEditor(); });
+  editor.querySelector('[data-role="toggleInitial"]').addEventListener("change", applyEditor);
+  editor.querySelector('[data-role="sequence"]').addEventListener("input", applyEditor);
+  editor.querySelector('[data-role="mouse"]').addEventListener("change", applyEditor);
+  editor.querySelector('[data-role="scroll"]').addEventListener("change", applyEditor);
+  editor.querySelector('[data-role="action"]').addEventListener("change", () => { syncEditor(); applyEditor(); });
+  editor.querySelector('[data-role="process"]').addEventListener("input", applyEditor);
+  editor.querySelector('[data-role="repeatDelay"]').addEventListener("input", applyEditor);
+  editor.querySelector('[data-role="repeatInterval"]').addEventListener("input", applyEditor);
+  document.getElementById("clear-seq").addEventListener("click", () => {
+    editor.querySelector('[data-role="sequence"]').value = "";
+    applyEditor();
+  });
+  document.getElementById("record-key").addEventListener("click", (event) => recordKey(event.target, false));
+  document.getElementById("record-segment").addEventListener("click", (event) => recordKey(event.target, true));
+  syncEditor();
 }
 
-function syncRow(row) {
-  const kind = row.querySelector('[data-role="type"]').value;
-  const mode = row.querySelector('[data-role="mode"]').value;
-  const show = (selector, visible) => row.querySelector(selector).classList.toggle("hidden", !visible);
-  show('[data-role="sequence"]', kind === "sequence");
-  show('[data-role="mouse"]', kind === "mouse");
-  show('[data-role="scroll"]', kind === "scroll");
-  show('[data-role="action-wrap"]', kind === "action");
-  show('[data-role="repeat-wrap"]', kind === "sequence" && mode === "repeat");
+function syncEditor() {
+  const editor = document.getElementById("editor");
+  const type = editor.querySelector('[data-role="type"]').value;
+  const mode = editor.querySelector('[data-role="mode"]').value;
+  const show = (selector, visible) => { const node = editor.querySelector(selector); if (node) node.classList.toggle("hidden", !visible); };
+  show('[data-role="seq-wrap"]', type === "sequence");
+  show('[data-role="mouse-wrap"]', type === "mouse");
+  show('[data-role="scroll-wrap"]', type === "scroll");
+  show('[data-role="action-wrap"]', type === "action");
+  show('[data-role="repeat-wrap"]', type === "sequence" && mode === "repeat");
   show('[data-role="toggle-wrap"]', mode === "toggle");
-  row.querySelector('[data-role="mode"]').disabled = kind === "action" || kind === "none";
+  editor.querySelector('[data-role="mode"]').disabled = type === "action" || type === "none";
 }
 
-function renderMappings() {
-  document.getElementById("mapping-enabled").checked = !!mapping.enabled;
-  document.getElementById("mappings").innerHTML = INPUT_NAMES.map(mappingRow).join("");
-  document.querySelectorAll("#mappings .row").forEach(syncRow);
-}
-
-function collectMapping() {
-  const mappings = {};
-  const actions = {};
-  for (const name of INPUT_NAMES) {
-    const row = document.querySelector(`[data-input="${name}"]`);
-    const kind = row.querySelector('[data-role="type"]').value;
-    if (kind === "none") continue;
-    if (kind === "action") {
-      const action = row.querySelector('[data-role="action"]').value;
-      const entry = { action };
-      if (action === "switch-to-app") entry.params = { process: row.querySelector('[data-role="process"]').value.trim() };
-      actions[name] = entry;
-      continue;
-    }
-    const form = {
-      kind,
-      mode: row.querySelector('[data-role="mode"]').value,
-      sequenceText: row.querySelector('[data-role="sequence"]').value,
-      mouse: row.querySelector('[data-role="mouse"]').value,
-      scroll: row.querySelector('[data-role="scroll"]').value,
-      repeatDelay: Number(row.querySelector('[data-role="repeatDelay"]').value),
-      repeatInterval: Number(row.querySelector('[data-role="repeatInterval"]').value),
-      toggleInitial: row.querySelector('[data-role="toggleInitial"]').value,
-    };
-    const result = mappingEntryFromForm(form);
-    if (result.error) throw new Error(`${name}: ${result.error}`);
-    mappings[name] = result.entry;
+function applyEditor() {
+  if (!selected) return;
+  const editor = document.getElementById("editor");
+  const type = editor.querySelector('[data-role="type"]').value;
+  delete working.mappings[selected];
+  delete working.actions[selected];
+  if (type === "action") {
+    const action = editor.querySelector('[data-role="action"]').value;
+    const entry = { action };
+    if (action === "switch-to-app") entry.params = { process: editor.querySelector('[data-role="process"]').value.trim() };
+    working.actions[selected] = entry;
+  } else if (type !== "none") {
+    const result = mappingEntryFromForm({
+      kind: type,
+      mode: editor.querySelector('[data-role="mode"]').value,
+      sequenceText: editor.querySelector('[data-role="sequence"]').value,
+      mouse: editor.querySelector('[data-role="mouse"]').value,
+      scroll: editor.querySelector('[data-role="scroll"]').value,
+      repeatDelay: Number(editor.querySelector('[data-role="repeatDelay"]').value),
+      repeatInterval: Number(editor.querySelector('[data-role="repeatInterval"]').value),
+      toggleInitial: editor.querySelector('[data-role="toggleInitial"]').value,
+    });
+    if (result.entry) working.mappings[selected] = result.entry;
   }
-  return { mappings, actions };
+  renderController();
+}
+
+async function recordKey(button, newSegment) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Press a key...";
+  try {
+    const data = await api("/api/key-capture", "POST");
+    if (data.cancelled) {
+      showMessage("Capture cancelled", "error");
+    } else if (data.keyCode) {
+      const textarea = document.querySelector('#editor [data-role="sequence"]');
+      textarea.value = appendKey(textarea.value, data.keyCode, newSegment);
+      applyEditor();
+      showMessage(`Captured ${data.keyCode}`, "ok");
+    }
+  } catch (error) {
+    showMessage(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
 }
 
 async function saveMapping() {
-  const { mappings, actions } = collectMapping();
-  const document_ = {
-    version: mapping.version,
+  const documentBody = {
+    version: working.version,
     enabled: document.getElementById("mapping-enabled").checked,
-    mappings,
-    actions,
-    touchpad: mapping.touchpad,
+    mappings: working.mappings,
+    actions: working.actions,
+    touchpad: working.touchpad,
   };
-  mapping = await api("/api/mapping", "PUT", { ...document_, baseVersion: mapping.baseVersion });
-  renderMappings();
+  mapping = await api("/api/mapping", "PUT", { ...documentBody, baseVersion: mapping.baseVersion });
+  working = JSON.parse(JSON.stringify(mapping));
+  renderController();
+  renderEditor();
   showMessage("Mappings saved", "ok");
 }
 
@@ -167,23 +260,32 @@ async function saveTouchpad() {
     click: { left: root.querySelector('[data-role="clickLeft"]').value, right: root.querySelector('[data-role="clickRight"]').value },
   };
   mapping = await api("/api/mapping", "PUT", { ...mapping, touchpad, baseVersion: mapping.baseVersion });
+  working = JSON.parse(JSON.stringify(mapping));
   renderTouchpad();
   showMessage("Touchpad saved", "ok");
 }
 
 // -- lighting ----------------------------------------------------------
+function lightRow(state, light) {
+  return `<div class="row" data-light="${state}">
+    <span class="name">${state}</span>
+    <input type="color" data-role="color" value="${rgbToHex(light.color)}" />
+    <select data-role="effect">${options(EFFECTS, light.effect)}</select>
+    <span class="inline">speed <input type="number" min="1" max="5" data-role="speed" value="${light.speed}" /></span>
+  </div>`;
+}
+
 function renderLighting() {
   const light = settings.lighting;
-  const rows = STATUS_STATES.map((state) => optionRow(state, light.status[state])).join("");
   document.getElementById("lighting").innerHTML = `
     <div class="row"><span class="name">Mode</span><select data-role="mode">${options(["status", "manual"], light.mode)}</select><span></span><span></span></div>
     <div class="row"><span class="name">Brightness</span><input type="number" min="0" max="100" data-role="brightness" value="${light.brightness}" /><span></span><span></span></div>
     <div class="row"><span class="name">Player LEDs</span><input type="number" min="0" max="31" data-role="playerLeds" value="${light.playerLeds}" /><span></span><span></span></div>
     <div class="row"><span class="name">Mute LED invert</span><input type="checkbox" data-role="muteLedInvert"${light.muteLedInvert ? " checked" : ""} /><span></span><span></span></div>
     <div class="sub">Status colours</div>
-    ${rows}
+    ${STATUS_STATES.map((state) => lightRow(state, light.status[state])).join("")}
     <div class="sub">Manual override</div>
-    ${optionRow("manual", light.manual)}`;
+    ${lightRow("manual", light.manual)}`;
 }
 
 function collectLight(key) {
@@ -276,7 +378,10 @@ async function saveTheme(theme) {
 async function load() {
   mapping = await api("/api/mapping");
   settings = await api("/api/settings");
-  renderMappings();
+  working = JSON.parse(JSON.stringify(mapping));
+  document.getElementById("mapping-enabled").checked = !!working.enabled;
+  renderController();
+  renderEditor();
   renderTouchpad();
   renderLighting();
   renderTriggers();
@@ -285,9 +390,8 @@ async function load() {
 }
 
 function bind() {
-  document.getElementById("mappings").addEventListener("change", (event) => {
-    const row = event.target.closest(".row");
-    if (row) syncRow(row);
+  document.getElementById("mapping-enabled").addEventListener("change", (event) => {
+    working.enabled = event.target.checked;
   });
   document.getElementById("save-mapping").addEventListener("click", () =>
     saveMapping().catch((error) => showMessage(error.message, "error")));

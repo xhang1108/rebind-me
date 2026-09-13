@@ -132,7 +132,7 @@ class EngineTest(unittest.TestCase):
         )
         self.assertEqual(self.output.events, [("down", "ControlLeft")])
 
-    def test_repeat_respects_delay_and_interval(self) -> None:
+    def test_repeat_fires_once_on_press_then_repeats(self) -> None:
         self.engine.load(
             document(
                 {
@@ -145,32 +145,34 @@ class EngineTest(unittest.TestCase):
             )
         )
         self.engine.press("circle", 0.0)
-        self.engine.tick(0.2)
-        self.assertEqual(self.output.events, [])
-        self.engine.tick(0.3)
+        # Immediate single trigger so a quick tap still works.
         self.assertEqual(self.output.events, [("down", "Delete"), ("up", "Delete")])
-        self.engine.tick(0.35)
+        self.engine.tick(0.2)
+        self.assertEqual(len(self.output.events), 2)
+        self.engine.tick(0.3)
         self.assertEqual(len(self.output.events), 4)
+        self.engine.tick(0.35)
+        self.assertEqual(len(self.output.events), 6)
         self.engine.release("circle", 0.36)
         self.engine.tick(0.4)
-        self.assertEqual(len(self.output.events), 4)
+        self.assertEqual(len(self.output.events), 6)
 
-    def test_repeat_stops_on_release(self) -> None:
+    def test_repeat_quick_tap_triggers_once(self) -> None:
         self.engine.load(
             document(
                 {
                     "circle": {
                         "mode": "repeat",
                         "sequence": [["Delete"]],
-                        "repeat": {"delayMs": 100, "intervalMs": 50},
+                        "repeat": {"delayMs": 300, "intervalMs": 50},
                     }
                 }
             )
         )
         self.engine.press("circle", 0.0)
-        self.engine.release("circle", 0.01)
-        self.engine.tick(0.5)
-        self.assertEqual(self.output.events, [])
+        self.engine.release("circle", 0.05)
+        self.engine.tick(1.0)
+        self.assertEqual(self.output.events, [("down", "Delete"), ("up", "Delete")])
 
     def test_action_dispatch(self) -> None:
         calls: list[tuple] = []

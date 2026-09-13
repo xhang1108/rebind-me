@@ -57,6 +57,22 @@ export function mappingEntryFromForm(form) {
   return { entry };
 }
 
+export function mappingSummary(entry, action) {
+  if (action) return action.action;
+  if (!entry) return "-";
+  if (entry.mouse) return entry.mouse;
+  if (entry.scroll) return entry.scroll;
+  return (entry.sequence || []).map((segment) => segment.join("+")).join(" / ") || "-";
+}
+
+// Append a captured key to a sequence text field.
+export function appendKey(text, code, newSegment = false) {
+  const current = String(text || "").trim();
+  if (!current) return code;
+  if (newSegment) return `${current.replace(/;\s*$/, "")}; ${code}`;
+  return `${current}, ${code}`;
+}
+
 // Entry -> form fields for editing.
 export function mappingFormFromEntry(entry) {
   const form = {

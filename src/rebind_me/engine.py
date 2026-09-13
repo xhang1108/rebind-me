@@ -138,6 +138,9 @@ class MappingEngine:
                 self._activate(binding)
                 binding.toggle_on = True
         elif mode == "repeat":
+            # Fire once on press (a quick tap still does something), then keep
+            # repeating while held after delayMs.
+            self._emit_once(binding, now)
             self._schedule_repeat(binding, now)
 
     def release(self, name: str, now: float) -> None:

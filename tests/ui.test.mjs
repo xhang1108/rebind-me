@@ -3,7 +3,8 @@ import { test } from "node:test";
 
 import {
   INPUT_NAMES, MOUSE_CODES, SCROLL_CODES,
-  clamp, formatSequence, hexToRgb, mappingEntryFromForm, mappingFormFromEntry, parseSequence, rgbToHex,
+  appendKey, clamp, formatSequence, hexToRgb, mappingEntryFromForm,
+  mappingFormFromEntry, mappingSummary, parseSequence, rgbToHex,
 } from "../src/rebind_me/ui/model.js";
 
 test("input names match the bridge contract", () => {
@@ -61,6 +62,20 @@ test("clamp and colour helpers", () => {
   assert.deepEqual(hexToRgb("#00ff00"), [0, 255, 0]);
   assert.equal(rgbToHex([0, 255, 0]), "#00ff00");
   assert.equal(rgbToHex(hexToRgb("#4c8bf5")), "#4c8bf5");
+});
+
+test("mapping summary", () => {
+  assert.equal(mappingSummary(null, null), "-");
+  assert.equal(mappingSummary({ sequence: [["ControlLeft", "KeyK"], ["KeyL"]] }, null), "ControlLeft+KeyK / KeyL");
+  assert.equal(mappingSummary({ mouse: "MouseLeft" }, null), "MouseLeft");
+  assert.equal(mappingSummary(null, { action: "focus-terminal" }), "focus-terminal");
+});
+
+test("append captured key", () => {
+  assert.equal(appendKey("", "KeyK"), "KeyK");
+  assert.equal(appendKey("ControlLeft", "KeyK"), "ControlLeft, KeyK");
+  assert.equal(appendKey("ControlLeft, KeyK", "KeyL", true), "ControlLeft, KeyK; KeyL");
+  assert.equal(appendKey("", "KeyL", true), "KeyL");
 });
 
 test("code lists are non-empty", () => {

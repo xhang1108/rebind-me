@@ -6,6 +6,7 @@
   --text: #e6e9ee;
   --muted: #9aa4b2;
   --accent: #4c8bf5;
+  --accent-soft: #2a3a55;
   --border: #2c3540;
   color-scheme: dark;
 }
@@ -17,6 +18,7 @@
   --text: #1b2027;
   --muted: #5b6675;
   --accent: #2563eb;
+  --accent-soft: #dbe6fb;
   --border: #d5dbe3;
   color-scheme: light;
 }
@@ -67,30 +69,43 @@ header h1 {
 }
 
 main {
-  max-width: 1000px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 16px;
 }
 
+.card,
 details {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
   margin-bottom: 12px;
-  padding: 6px 14px 12px;
+  padding: 10px 14px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-head h2,
+summary {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 6px 0;
 }
 
 summary {
   cursor: pointer;
-  font-weight: 600;
-  padding: 8px 0;
 }
 
 .toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 0;
+  padding: 6px 0;
 }
 
 button {
@@ -100,6 +115,13 @@ button {
   border-radius: 6px;
   padding: 6px 14px;
   cursor: pointer;
+  font: inherit;
+}
+
+button.secondary {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
 }
 
 button:hover {
@@ -107,7 +129,8 @@ button:hover {
 }
 
 input,
-select {
+select,
+textarea {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -123,39 +146,98 @@ select {
   color: var(--muted);
 }
 
-.rows {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: 150px 110px 110px 1fr;
-  gap: 8px;
-  align-items: center;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.row:last-child {
-  border-bottom: 0;
-}
-
-.row .name {
-  font-weight: 600;
-}
-
-.form .row {
-  grid-template-columns: 150px 110px 110px 1fr;
+.sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0 10px;
 }
 
 .hidden {
   display: none !important;
 }
 
+/* -- controller diagram ------------------------------------------------- */
+.controller {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  aspect-ratio: 760 / 470;
+  margin: 4px auto 0;
+}
+
+.ctl {
+  position: absolute;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  line-height: 1.05;
+}
+
+.ctl.round {
+  border-radius: 50%;
+}
+
+.ctl.pill {
+  border-radius: 999px;
+}
+
+.ctl .label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ctl .sum {
+  font-size: 9px;
+  color: var(--muted);
+  max-width: 96%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctl.mapped {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.ctl.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.ctl.center {
+  background: var(--panel);
+}
+
+/* -- editor ------------------------------------------------------------- */
+.editor {
+  display: grid;
+  gap: 8px;
+}
+
+.editor .line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.editor textarea {
+  width: 100%;
+  min-height: 44px;
+  resize: vertical;
+}
+
 .message {
-  max-width: 1000px;
+  max-width: 1040px;
   margin: 12px auto 0;
   padding: 10px 14px;
   border-radius: 8px;
@@ -173,7 +255,14 @@ select {
   color: #a5d6a7;
 }
 
-.sub {
-  color: var(--muted);
-  font-size: 12px;
+.row {
+  display: grid;
+  grid-template-columns: 170px 110px 110px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.row .name {
+  font-weight: 600;
 }
