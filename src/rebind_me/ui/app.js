@@ -187,11 +187,13 @@ function addShapeHitbox(svg, input, tag, attrs) {
   svg.appendChild(shape);
 }
 
-function roundedTopPath(x, y, w, h, r) {
+function hollowTopPath(x, y, w, h, r, t) {
+  const ri = Math.max(0.2, r - t);
   return (
-    `M ${x} ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} ` +
-    `H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} ` +
-    `V ${y + h} H ${x} Z`
+    `M ${x} ${y + h} V ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} ` +
+    `H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} V ${y + h} ` +
+    `H ${x + w - t} V ${y + r} A ${ri} ${ri} 0 0 0 ${x + w - r} ${y + t} ` +
+    `H ${x + r} A ${ri} ${ri} 0 0 0 ${x + t} ${y + r} V ${y + h} Z`
   );
 }
 
@@ -202,9 +204,10 @@ function drawTriggers(svg) {
   const make = (source, input, x) => {
     if (!source) return;
     const bumper = source.getBBox();
-    const top = 18;
+    const top = 17;
     const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", roundedTopPath(x, top, 30, 13, 4));
+    path.setAttribute("d", hollowTopPath(x, top, 30, 15, 4, 0.8));
+    path.setAttribute("fill-rule", "evenodd");
     path.setAttribute("fill", "currentColor");
     path.setAttribute("class", "hit");
     path.setAttribute("data-input", input);
