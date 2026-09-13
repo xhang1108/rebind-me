@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,10 +7,51 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main id="app">
+    <header>
       <h1>Rebind Me</h1>
-      <p class="placeholder">UI skeleton — full single-page UI lands in stage 4.</p>
+      <div class="status">
+        <span id="status-device" class="badge">device: ?</span>
+        <span id="status-state" class="badge">state: ?</span>
+        <label class="inline">Theme
+          <select id="theme">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <div id="message" class="message" hidden></div>
+
+    <main>
+      <details open>
+        <summary>Button mappings</summary>
+        <div class="toolbar">
+          <label class="inline"><input type="checkbox" id="mapping-enabled" /> Enabled</label>
+          <button id="save-mapping">Save mappings</button>
+        </div>
+        <div id="mappings" class="rows"></div>
+      </details>
+
+      <details>
+        <summary>Touchpad</summary>
+        <div id="touchpad" class="form"></div>
+        <div class="toolbar"><button id="save-touchpad">Save touchpad</button></div>
+      </details>
+
+      <details>
+        <summary>Lighting</summary>
+        <div id="lighting" class="form"></div>
+        <div class="toolbar"><button id="save-lighting">Save lighting</button></div>
+      </details>
+
+      <details>
+        <summary>Triggers</summary>
+        <div id="triggers" class="form"></div>
+        <div class="toolbar"><button id="save-triggers">Save triggers</button></div>
+      </details>
     </main>
-    <script src="app.js"></script>
+
+    <script type="module" src="app.js"></script>
   </body>
 </html>

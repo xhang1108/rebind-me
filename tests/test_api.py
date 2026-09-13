@@ -185,6 +185,17 @@ class StaticTest(unittest.TestCase):
             traversal = app.handle(Request("GET", "/../secret.txt", ORIGIN))
             self.assertEqual(traversal.status, 404)
 
+    def test_content_types(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ui = Path(tmp)
+            (ui / "app.js").write_text("export const x = 1;", encoding="utf-8")
+            (ui / "styles.css").write_text("body{}", encoding="utf-8")
+            app = app_with(FakeBackend(), ui)
+            js = app.handle(Request("GET", "/app.js", ORIGIN))
+            self.assertIn("javascript", js.content_type)
+            css = app.handle(Request("GET", "/styles.css", ORIGIN))
+            self.assertIn("text/css", css.content_type)
+
 
 if __name__ == "__main__":
     unittest.main()

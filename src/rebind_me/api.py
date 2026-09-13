@@ -39,6 +39,17 @@ ROUTES: dict[str, set[str]] = {
 }
 TOKEN_ENDPOINTS = frozenset({"/api/autostart", "/api/sessions", "/api/shutdown"})
 
+_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+}
+
 
 @dataclass
 class Request:
@@ -202,12 +213,14 @@ class ApiApp:
             return _error("NOT_FOUND", "not found", 404)
         if not target.is_file():
             return _error("NOT_FOUND", "not found", 404)
-        content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-        if content_type.startswith("text/") or content_type in (
-            "application/javascript",
-            "application/json",
-        ):
-            content_type = f"{content_type}; charset=utf-8"
+        content_type = _CONTENT_TYPES.get(target.suffix.lower())
+        if content_type is None:
+            content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+            if content_type.startswith("text/") or content_type in (
+                "application/javascript",
+                "application/json",
+            ):
+                content_type = f"{content_type}; charset=utf-8"
         return Response(200, target.read_bytes(), content_type)
 
 
