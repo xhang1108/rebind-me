@@ -213,6 +213,17 @@ textarea {
   box-shadow: 0 0 0 2px var(--accent) inset;
 }
 
+.ctl.pressed {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.ctl.pressed .sum {
+  color: #fff;
+  opacity: 0.85;
+}
+
 .ctl.center {
   background: var(--panel);
 }

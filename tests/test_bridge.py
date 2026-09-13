@@ -80,6 +80,13 @@ class BridgeTest(unittest.TestCase):
         status = self.bridge.status()
         self.assertTrue(status["running"])
         self.assertEqual(status["device"], "disconnected")
+        self.assertEqual(status["inputs"], [])
+
+    def test_status_reports_pressed_inputs(self) -> None:
+        self.bridge._on_report(input_report(face=0x28), None)  # cross held
+        self.assertIn("cross", self.bridge.status()["inputs"])
+        self.bridge._on_report(input_report(face=0x08), None)
+        self.assertEqual(self.bridge.status()["inputs"], [])
 
     def test_put_mapping_round_trip(self) -> None:
         document = mapping_doc({"cross": {"mode": "single", "sequence": [["KeyK"]]}})

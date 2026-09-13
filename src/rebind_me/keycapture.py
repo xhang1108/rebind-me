@@ -56,6 +56,28 @@ _HOOKPROC = ctypes.WINFUNCTYPE(
 )
 
 
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+_user32.SetWindowsHookExW.restype = wintypes.HHOOK
+_user32.SetWindowsHookExW.argtypes = (
+    ctypes.c_int,
+    _HOOKPROC,
+    wintypes.HINSTANCE,
+    wintypes.DWORD,
+)
+_user32.UnhookWindowsHookEx.argtypes = (wintypes.HHOOK,)
+_user32.CallNextHookEx.restype = ctypes.c_ssize_t
+_user32.CallNextHookEx.argtypes = (wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+_user32.GetMessageW.argtypes = (ctypes.POINTER(MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT)
+_user32.GetMessageW.restype = ctypes.c_int
+_user32.TranslateMessage.argtypes = (ctypes.POINTER(MSG),)
+_user32.DispatchMessageW.argtypes = (ctypes.POINTER(MSG),)
+_user32.PostQuitMessage.argtypes = (ctypes.c_int,)
+_user32.PostThreadMessageW.argtypes = (wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+_kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+
+
 class WindowsKeyReader:
     """Installs a low-level hook on a worker thread and returns one VK code.
 
@@ -64,8 +86,6 @@ class WindowsKeyReader:
 
     def __init__(self, timeout: float = CAPTURE_TIMEOUT_SECONDS):
         self.timeout = timeout
-        self._user32 = ctypes.WinDLL("user32", use_last_error=True)
-        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self._result: int | None = None
         self._done = threading.Event()
         self._thread_id = 0
@@ -77,7 +97,7 @@ class WindowsKeyReader:
         self._thread.start()
         if not self._done.wait(self.timeout):
             if self._thread_id:
-                self._user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
+                _user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
             self._thread.join(1.0)
             raise TimeoutError("key capture timed out")
         return self._result
@@ -87,22 +107,22 @@ class WindowsKeyReader:
             info = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
             self._result = None if info.vkCode == VK_ESCAPE else int(info.vkCode)
             self._done.set()
-            self._user32.PostQuitMessage(0)
+            _user32.PostQuitMessage(0)
         return 1  # block the key while capturing
 
     def _run(self) -> None:
-        self._thread_id = self._kernel32.GetCurrentThreadId()
-        hook = self._user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, None, 0)
+        self._thread_id = _kernel32.GetCurrentThreadId()
+        hook = _user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, None, 0)
         if not hook:
             self._done.set()
             return
         message = MSG()
         try:
-            while self._user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
-                self._user32.TranslateMessage(ctypes.byref(message))
-                self._user32.DispatchMessageW(ctypes.byref(message))
+            while _user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
+                _user32.TranslateMessage(ctypes.byref(message))
+                _user32.DispatchMessageW(ctypes.byref(message))
         finally:
-            self._user32.UnhookWindowsHookEx(hook)
+            _user32.UnhookWindowsHookEx(hook)
 
 
 class KeyCapture:

@@ -260,6 +260,7 @@ class Bridge:
                 "status": self._status,
                 "mouseControl": self._mapping.snapshot()["touchpad"]["mouseControl"],
                 "port": self._port(),
+                "inputs": sorted(self._active_inputs),
             }
 
     def get_mapping(self) -> dict:

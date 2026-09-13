@@ -358,6 +358,10 @@ async function pollStatus() {
     const status = await api("/api/status");
     document.getElementById("status-device").textContent = `device: ${status.device}`;
     document.getElementById("status-state").textContent = `state: ${status.status}`;
+    const pressed = new Set(status.inputs || []);
+    document.querySelectorAll("#controller .ctl").forEach((node) => {
+      node.classList.toggle("pressed", pressed.has(node.dataset.input));
+    });
   } catch (error) {
     document.getElementById("status-device").textContent = "device: offline";
   }
@@ -407,4 +411,4 @@ function bind() {
 
 bind();
 load().catch((error) => showMessage(error.message, "error"));
-setInterval(pollStatus, 1500);
+setInterval(pollStatus, 120);
