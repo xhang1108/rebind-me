@@ -61,6 +61,7 @@ const PATH_INPUT = {
   19: "options",
   20: "create",
   21: "ps",
+  22: "ps",
 };
 
 // Thin glyphs get an invisible thicker stroke so they are easy to hit.
@@ -102,8 +103,46 @@ function refreshMap() {
   });
 }
 
+function hoverPath(input, on) {
+  document.querySelectorAll(`.pad-svg svg path[data-input="${input}"]`).forEach((path) => {
+    path.classList.toggle("hover", on);
+  });
+}
+
+// Transparent shape matching each glyph's footprint, so the interior (the hole
+// of the outline) is clickable while still using the SVG geometry.
+function addHitbox(svg, element, input) {
+  const bounds = element.getBBox();
+  let shape;
+  if (input === "touchpad") {
+    shape = document.createElementNS(SVG_NS, "rect");
+    shape.setAttribute("x", bounds.x);
+    shape.setAttribute("y", bounds.y);
+    shape.setAttribute("width", bounds.width);
+    shape.setAttribute("height", bounds.height);
+  } else {
+    shape = document.createElementNS(SVG_NS, "ellipse");
+    shape.setAttribute("cx", bounds.x + bounds.width / 2);
+    shape.setAttribute("cy", bounds.y + bounds.height / 2);
+    shape.setAttribute("rx", Math.max(bounds.width / 2, 1.3));
+    shape.setAttribute("ry", Math.max(bounds.height / 2, 1.3));
+  }
+  shape.setAttribute("class", "hitbox");
+  shape.setAttribute("data-input", input);
+  shape.setAttribute("fill", "transparent");
+  shape.setAttribute("pointer-events", "all");
+  shape.addEventListener("click", () => selectInput(input));
+  shape.addEventListener("mouseenter", () => hoverPath(input, true));
+  shape.addEventListener("mouseleave", () => hoverPath(input, false));
+  const title = document.createElementNS(SVG_NS, "title");
+  title.textContent = input;
+  shape.appendChild(title);
+  svg.appendChild(shape);
+}
+
 function tagSvg(container) {
-  const paths = container.querySelectorAll(".pad-svg svg path");
+  const svg = container.querySelector(".pad-svg svg");
+  const paths = svg.querySelectorAll("path");
   paths.forEach((path, index) => {
     const input = PATH_INPUT[index];
     if (!input) return;
@@ -115,6 +154,10 @@ function tagSvg(container) {
     hint.textContent = summary === "-" ? input : `${input}: ${summary}`;
     path.appendChild(hint);
     path.addEventListener("click", () => selectInput(input));
+  });
+  paths.forEach((path, index) => {
+    const input = PATH_INPUT[index];
+    if (input) addHitbox(svg, path, input);
   });
 }
 
@@ -129,25 +172,26 @@ function renderDirs(wrap) {
 }
 
 function drawTriggers(svg) {
-  // L2/R2 are not in the artwork; draw them in the same monochrome style.
-  const make = (input, x) => {
-    const rect = document.createElementNS(SVG_NS, "rect");
-    rect.setAttribute("x", x);
-    rect.setAttribute("y", 16);
-    rect.setAttribute("width", 26);
-    rect.setAttribute("height", 8);
-    rect.setAttribute("rx", 4);
-    rect.setAttribute("ry", 4);
-    rect.setAttribute("data-input", input);
-    rect.setAttribute("class", "hit");
-    rect.addEventListener("click", () => selectInput(input));
+  // L2/R2 are not in the artwork. Clone the L1/R1 glyphs and lift them above
+  // the shoulders so the trigger keeps the same curvature and line style.
+  const paths = svg.querySelectorAll("path");
+  const clone = (source, input, dy) => {
+    if (!source) return;
+    const path = source.cloneNode(false);
+    path.setAttribute("class", "hit");
+    path.setAttribute("data-input", input);
+    path.removeAttribute("transform");
+    path.setAttribute("transform", `translate(0 ${dy})`);
+    path.style.strokeWidth = "";
+    path.addEventListener("click", () => selectInput(input));
     const title = document.createElementNS(SVG_NS, "title");
     title.textContent = input;
-    rect.appendChild(title);
-    svg.appendChild(rect);
+    path.appendChild(title);
+    svg.appendChild(path);
+    addHitbox(svg, path, input);
   };
-  make("l2", 16);
-  make("r2", 86);
+  clone(paths[10], "l2", -8);
+  clone(paths[9], "r2", -8);
 }
 
 function renderController() {
