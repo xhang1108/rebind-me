@@ -78,21 +78,28 @@ _user32.PostThreadMessageW.argtypes = (wintypes.DWORD, wintypes.UINT, wintypes.W
 _kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 
 
-class WindowsKeyReader:
-    """Installs a low-level hook on a worker thread and returns one VK code.
+_UNSET = object()
 
-    ``read`` returns ``None`` when Esc cancels, or raises ``TimeoutError``.
+
+class WindowsKeyReader:
+    """Captures one chord (all keys held together) with a low-level hook.
+
+    Records every keydown until all keys are released, so Ctrl+Tab comes back
+    as ``["ControlLeft", "Tab"]``. ``read`` returns ``None`` when Esc cancels,
+    or raises ``TimeoutError``. Every key is blocked while capturing.
     """
 
     def __init__(self, timeout: float = CAPTURE_TIMEOUT_SECONDS):
         self.timeout = timeout
-        self._result: int | None = None
+        self._result: object = _UNSET
         self._done = threading.Event()
         self._thread_id = 0
         self._thread: threading.Thread | None = None
         self._proc = _HOOKPROC(self._callback)
+        self._all_pressed: list[int] = []
+        self._currently_down: set[int] = set()
 
-    def read(self) -> int | None:
+    def read(self) -> list[int] | None:
         self._thread = threading.Thread(target=self._run, name="key-capture", daemon=True)
         self._thread.start()
         if not self._done.wait(self.timeout):
@@ -100,20 +107,36 @@ class WindowsKeyReader:
                 _user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
             self._thread.join(1.0)
             raise TimeoutError("key capture timed out")
-        return self._result
+        if self._result is _UNSET:
+            return None
+        return self._result  # type: ignore[return-value]
+
+    def _finish(self, result: list[int] | None) -> None:
+        if self._result is _UNSET:
+            self._result = result
+        self._done.set()
+        _user32.PostQuitMessage(0)
 
     def _callback(self, ncode: int, wparam: int, lparam: int) -> int:
         if ncode == 0 and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN):
-            info = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-            self._result = None if info.vkCode == VK_ESCAPE else int(info.vkCode)
-            self._done.set()
-            _user32.PostQuitMessage(0)
+            vk = int(ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents.vkCode)
+            if vk == VK_ESCAPE:
+                self._finish(None)
+            elif vk not in self._currently_down:
+                self._currently_down.add(vk)
+                self._all_pressed.append(vk)
+        elif ncode == 0 and wparam in (WM_KEYUP, WM_SYSKEYUP):
+            vk = int(ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents.vkCode)
+            self._currently_down.discard(vk)
+            if self._all_pressed and not self._currently_down:
+                self._finish(list(self._all_pressed))
         return 1  # block the key while capturing
 
     def _run(self) -> None:
         self._thread_id = _kernel32.GetCurrentThreadId()
         hook = _user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, None, 0)
         if not hook:
+            self._result = None
             self._done.set()
             return
         message = MSG()
@@ -137,15 +160,19 @@ class KeyCapture:
     def capture(self) -> dict:
         reader = self._reader_factory()
         try:
-            vk = reader.read()  # type: ignore[attr-defined]
+            vks = reader.read()  # type: ignore[attr-defined]
         except TimeoutError as error:
             raise RebindError("CAPTURE_TIMEOUT", "key capture timed out", 408) from error
-        if vk is None:
+        if vks is None:
             return {"cancelled": True}
-        code = HOOK_CODES_BY_VK.get(int(vk))
-        if code is None:
-            raise RebindError("INVALID_KEY_CODE", f"unsupported key: 0x{int(vk):02X}")
-        return {"keyCode": code}
+        codes: list[str] = []
+        for vk in vks:
+            code = HOOK_CODES_BY_VK.get(int(vk))
+            if code is None:
+                raise RebindError("INVALID_KEY_CODE", f"unsupported key: 0x{int(vk):02X}")
+            if code not in codes:
+                codes.append(code)
+        return {"keys": codes}
 
 
 __all__ = ["CAPTURE_TIMEOUT_SECONDS", "KeyCapture", "WindowsKeyReader"]

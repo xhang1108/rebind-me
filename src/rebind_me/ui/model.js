@@ -65,12 +65,18 @@ export function mappingSummary(entry, action) {
   return (entry.sequence || []).map((segment) => segment.join("+")).join(" / ") || "-";
 }
 
-// Append a captured key to a sequence text field.
-export function appendKey(text, code, newSegment = false) {
+// Append a captured chord segment to a sequence text field.
+export function appendKeys(text, codes, newSegment = false) {
+  const joined = (codes || []).join(", ");
+  if (!joined) return String(text || "");
   const current = String(text || "").trim();
-  if (!current) return code;
-  if (newSegment) return `${current.replace(/;\s*$/, "")}; ${code}`;
-  return `${current}, ${code}`;
+  if (!current) return joined;
+  if (newSegment) return `${current.replace(/;\s*$/, "")}; ${joined}`;
+  return `${current}, ${joined}`;
+}
+
+export function appendKey(text, code, newSegment = false) {
+  return appendKeys(text, [code], newSegment);
 }
 
 // Entry -> form fields for editing.

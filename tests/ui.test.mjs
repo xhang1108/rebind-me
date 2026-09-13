@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   INPUT_NAMES, MOUSE_CODES, SCROLL_CODES,
-  appendKey, clamp, formatSequence, hexToRgb, mappingEntryFromForm,
+  appendKey, appendKeys, clamp, formatSequence, hexToRgb, mappingEntryFromForm,
   mappingFormFromEntry, mappingSummary, parseSequence, rgbToHex,
 } from "../src/rebind_me/ui/model.js";
 
@@ -76,6 +76,12 @@ test("append captured key", () => {
   assert.equal(appendKey("ControlLeft", "KeyK"), "ControlLeft, KeyK");
   assert.equal(appendKey("ControlLeft, KeyK", "KeyL", true), "ControlLeft, KeyK; KeyL");
   assert.equal(appendKey("", "KeyL", true), "KeyL");
+});
+
+test("append captured chord segment", () => {
+  assert.equal(appendKeys("", ["ControlLeft", "Tab"]), "ControlLeft, Tab");
+  assert.equal(appendKeys("KeyK", ["ControlLeft", "Tab"]), "KeyK, ControlLeft, Tab");
+  assert.equal(appendKeys("KeyK", ["ControlLeft", "Tab"], true), "KeyK; ControlLeft, Tab");
 });
 
 test("code lists are non-empty", () => {

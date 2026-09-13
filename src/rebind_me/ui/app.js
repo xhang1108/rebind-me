@@ -1,6 +1,6 @@
 import {
   ACTIONS, EFFECTS, INPUT_NAMES, MODES, MOUSE_CODES, SCROLL_CODES, STATUS_STATES,
-  appendKey, clamp, hexToRgb, mappingEntryFromForm, mappingFormFromEntry,
+  appendKeys, clamp, hexToRgb, mappingEntryFromForm, mappingFormFromEntry,
   mappingSummary, rgbToHex,
 } from "./model.js";
 
@@ -210,11 +210,11 @@ async function recordKey(button, newSegment) {
     const data = await api("/api/key-capture", "POST");
     if (data.cancelled) {
       showMessage("Capture cancelled", "error");
-    } else if (data.keyCode) {
+    } else if (data.keys && data.keys.length) {
       const textarea = document.querySelector('#editor [data-role="sequence"]');
-      textarea.value = appendKey(textarea.value, data.keyCode, newSegment);
+      textarea.value = appendKeys(textarea.value, data.keys, newSegment);
       applyEditor();
-      showMessage(`Captured ${data.keyCode}`, "ok");
+      showMessage(`Captured ${data.keys.join(" + ")}`, "ok");
     }
   } catch (error) {
     showMessage(error.message, "error");

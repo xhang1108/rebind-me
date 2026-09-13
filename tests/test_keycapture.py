@@ -22,9 +22,13 @@ class KeyCaptureTest(unittest.TestCase):
     def capture_with(self, reader):
         return KeyCapture(reader_factory=lambda: reader).capture()
 
-    def test_returns_key_code_name(self) -> None:
-        result = self.capture_with(FakeReader(VK_CODES["KeyK"]))
-        self.assertEqual(result, {"keyCode": "KeyK"})
+    def test_returns_single_key(self) -> None:
+        result = self.capture_with(FakeReader([VK_CODES["KeyK"]]))
+        self.assertEqual(result, {"keys": ["KeyK"]})
+
+    def test_returns_chord_in_press_order(self) -> None:
+        result = self.capture_with(FakeReader([VK_CODES["ControlLeft"], VK_CODES["Tab"]]))
+        self.assertEqual(result, {"keys": ["ControlLeft", "Tab"]})
 
     def test_escape_cancels(self) -> None:
         result = self.capture_with(FakeReader(None))
@@ -38,7 +42,7 @@ class KeyCaptureTest(unittest.TestCase):
 
     def test_unknown_vk(self) -> None:
         with self.assertRaises(RebindError) as ctx:
-            self.capture_with(FakeReader(0x9999))
+            self.capture_with(FakeReader([0x9999]))
         self.assertEqual(ctx.exception.code, "INVALID_KEY_CODE")
 
 

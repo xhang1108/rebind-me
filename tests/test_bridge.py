@@ -148,10 +148,10 @@ class BridgeTest(unittest.TestCase):
     def test_key_capture_with_injected_reader(self) -> None:
         class Reader:
             def read(self):
-                return VK_CODES["KeyK"]
+                return [VK_CODES["KeyK"]]
 
         self.bridge._key_capture = KeyCapture(reader_factory=Reader)
-        self.assertEqual(self.bridge.key_capture(), {"keyCode": "KeyK"})
+        self.assertEqual(self.bridge.key_capture(), {"keys": ["KeyK"]})
 
 
 if __name__ == "__main__":
