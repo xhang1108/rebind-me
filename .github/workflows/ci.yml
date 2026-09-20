@@ -36,7 +36,16 @@ jobs:
           node-version: "20"
 
       - name: Node syntax check
-        run: node --check plugin/index.js
+        run: |
+          node --check plugin/events.mjs
+          node --check plugin/bridge.mjs
+          node --check src/rebind_me/ui/app.js
+
+      - name: Typecheck plugin
+        working-directory: plugin
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
 
       - name: Node tests
         run: node --test

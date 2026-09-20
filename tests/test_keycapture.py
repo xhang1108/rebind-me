@@ -1,5 +1,6 @@
 """Tests for the key-capture wrapper (injected reader)."""
 
+import threading
 import unittest
 
 from rebind_me.errors import RebindError
@@ -18,6 +19,22 @@ class FakeReader:
         return self.result
 
 
+class BlockingReader:
+    """Blocks in ``read`` until ``cancel`` is called."""
+
+    def __init__(self, started):
+        self.started = started
+        self._done = threading.Event()
+
+    def read(self):
+        self.started.set()
+        self._done.wait(2.0)
+        return None
+
+    def cancel(self):
+        self._done.set()
+
+
 class KeyCaptureTest(unittest.TestCase):
     def capture_with(self, reader):
         return KeyCapture(reader_factory=lambda: reader).capture()
@@ -26,13 +43,28 @@ class KeyCaptureTest(unittest.TestCase):
         result = self.capture_with(FakeReader([VK_CODES["KeyK"]]))
         self.assertEqual(result, {"keys": ["KeyK"]})
 
+    def test_escape_is_captured_like_any_key(self) -> None:
+        result = self.capture_with(FakeReader([VK_CODES["Escape"]]))
+        self.assertEqual(result, {"keys": ["Escape"]})
+
     def test_returns_chord_in_press_order(self) -> None:
         result = self.capture_with(FakeReader([VK_CODES["ControlLeft"], VK_CODES["Tab"]]))
         self.assertEqual(result, {"keys": ["ControlLeft", "Tab"]})
 
-    def test_escape_cancels(self) -> None:
-        result = self.capture_with(FakeReader(None))
-        self.assertEqual(result, {"cancelled": True})
+    def test_cancel_aborts_running_capture(self) -> None:
+        started = threading.Event()
+        reader = BlockingReader(started)
+        capture = KeyCapture(reader_factory=lambda: reader)
+        results: list[dict] = []
+        worker = threading.Thread(target=lambda: results.append(capture.capture()))
+        worker.start()
+        self.assertTrue(started.wait(1.0))
+        self.assertEqual(capture.cancel(), {"cancelled": True})
+        worker.join(2.0)
+        self.assertEqual(results, [{"cancelled": True}])
+
+    def test_cancel_is_safe_when_idle(self) -> None:
+        self.assertEqual(KeyCapture().cancel(), {"cancelled": True})
 
     def test_timeout(self) -> None:
         with self.assertRaises(RebindError) as ctx:

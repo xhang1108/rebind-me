@@ -7,9 +7,10 @@ from rebind_me.errors import RebindError
 
 
 class FakeWindows:
-    def __init__(self, windows, names=None):
+    def __init__(self, windows, names=None, foreground=0):
         self._windows = windows
         self._names = names or {}
+        self._foreground = foreground
         self.focused: list[int] = []
 
     def list_windows(self):
@@ -18,8 +19,12 @@ class FakeWindows:
     def process_name(self, pid):
         return self._names.get(pid, "")
 
+    def foreground_hwnd(self):
+        return self._foreground
+
     def focus_window(self, hwnd):
         self.focused.append(hwnd)
+        self._foreground = hwnd
         return True
 
 
@@ -95,6 +100,44 @@ class ActionRunnerTest(unittest.TestCase):
         runner = ActionRunner(windows)
         result = runner.run("triangle", "switch-to-app", {"process": "Nope"})
         self.assertFalse(result["focused"])
+
+    def test_switch_to_app_toggles_back(self) -> None:
+        windows = FakeWindows(
+            [window(1, 100), window(2, 200)],
+            names={100: "explorer.exe", 200: "OpenChamber.exe"},
+            foreground=1,
+        )
+        runner = ActionRunner(windows)
+        first = runner.run("triangle", "switch-to-app", {"process": "OpenChamber"})
+        self.assertEqual(first["hwnd"], 2)
+        second = runner.run("triangle", "switch-to-app", {"process": "OpenChamber"})
+        self.assertEqual(second["hwnd"], 1)
+        self.assertEqual(windows.focused, [2, 1])
+
+    def test_switch_to_app_target_already_foreground(self) -> None:
+        windows = FakeWindows(
+            [window(1, 100), window(2, 200)],
+            names={100: "explorer.exe", 200: "OpenChamber.exe"},
+            foreground=2,
+        )
+        runner = ActionRunner(windows)
+        first = runner.run("triangle", "switch-to-app", {"process": "OpenChamber"})
+        second = runner.run("triangle", "switch-to-app", {"process": "OpenChamber"})
+        self.assertEqual((first["hwnd"], second["hwnd"]), (2, 2))
+
+    def test_switch_to_app_forgets_gone_return_window(self) -> None:
+        listed = [window(1, 100), window(2, 200)]
+        windows = FakeWindows(
+            listed,
+            names={100: "explorer.exe", 200: "OpenChamber.exe"},
+            foreground=1,
+        )
+        runner = ActionRunner(windows)
+        runner.run("triangle", "switch-to-app", {"process": "OpenChamber"})
+        listed.pop(0)
+        result = runner.run("triangle", "switch-to-app", {"process": "OpenChamber"})
+        self.assertFalse(result["focused"])
+        self.assertEqual(result["reason"], "gone")
 
     def test_toggle_mouse_mode(self) -> None:
         calls: list[str] = []

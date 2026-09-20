@@ -54,5 +54,5 @@ entry, `--force` to overwrite. The expected values come from the checklist
   compared with `tolerance` (default `0.02`); `sequence` is exact.
 - `touch` is `null` or `{ "id": 1, "x": 123, "y": 456 }`.
 - `touchActive` (bool) asserts whether any point is active; `touchHalf` is
-  `"left"` or `"right"` and checks the X position against `splitX` 960.
+  `"left"` or `"right"` and checks the X position against the midpoint (960).
 - `tolerance` (optional float) overrides the axis comparison tolerance.

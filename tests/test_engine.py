@@ -28,7 +28,6 @@ def document(mappings: dict, actions: dict | None = None, enabled: bool = True) 
         "touchpad": {
             "mouseControl": True,
             "sensitivity": 1.5,
-            "splitX": 960,
             "tap": {"left": "MouseLeft", "right": "MouseRight"},
             "click": {"left": "MouseLeft", "right": "MouseRight"},
         },
@@ -67,7 +66,7 @@ class EngineTest(unittest.TestCase):
         self.engine.tick(0.09)
         self.assertEqual(self.output.events[-2:], [("down", "KeyL"), ("up", "KeyL")])
 
-    def test_chord_cancelled_when_released_before_delay(self) -> None:
+    def test_chord_completes_after_quick_release(self) -> None:
         self.engine.load(
             document(
                 {
@@ -81,7 +80,8 @@ class EngineTest(unittest.TestCase):
         self.engine.press("cross", 0.0)
         self.engine.release("cross", 0.01)
         self.engine.tick(0.2)
-        self.assertNotIn(("down", "KeyL"), self.output.events)
+        self.assertIn(("down", "KeyL"), self.output.events)
+        self.assertIn(("up", "KeyL"), self.output.events)
 
     def test_single_mouse_click(self) -> None:
         self.engine.load(document({"touchpad": {"mode": "single", "mouse": "MouseLeft"}}))

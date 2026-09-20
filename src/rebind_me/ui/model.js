@@ -9,18 +9,43 @@ export const INPUT_NAMES = [
   "right_stick_up", "right_stick_right", "right_stick_down", "right_stick_left",
 ];
 
+// Touchpad tap / click zones. The bridge drives these from touch gestures but
+// they are ordinary mapping targets, so the Touchpad tab edits them with the
+// same editor as the Mappings tab.
+export const TOUCHPAD_ZONE_INPUTS = [
+  "touchpad_tap_left", "touchpad_tap_right",
+  "touchpad_click_left", "touchpad_click_right",
+];
+
+// Grouped for the Mappings list. The union of the groups is exactly
+// INPUT_NAMES, including `touchpad`; the test enforces that so neither list
+// can drift away from the other or from the bridge's input contract.
+export const INPUT_GROUPS = [
+  ["Face", ["square", "cross", "circle", "triangle"]],
+  ["D-pad", ["dpad_up", "dpad_right", "dpad_down", "dpad_left"]],
+  ["Shoulders", ["l1", "r1", "l2", "r2"]],
+  ["Sticks", [
+    "l3", "r3",
+    "left_stick_up", "left_stick_right", "left_stick_down", "left_stick_left",
+    "right_stick_up", "right_stick_right", "right_stick_down", "right_stick_left",
+  ]],
+  ["System", ["create", "options", "ps", "touchpad", "mute"]],
+];
+
 export const MODES = ["single", "repeat", "hold", "toggle"];
+export const MAX_CHORD_SEGMENTS = 2;
 export const MOUSE_CODES = ["MouseLeft", "MouseRight", "MouseMiddle", "MouseBack", "MouseForward"];
 export const SCROLL_CODES = ["ScrollUp", "ScrollDown", "ScrollLeft", "ScrollRight"];
 export const ACTIONS = ["focus-terminal", "switch-to-app", "toggle-mouse-mode", "open-config-ui"];
 export const EFFECTS = ["static", "breathe", "blink"];
 export const STATUS_STATES = ["idle", "working", "approval", "error"];
+export const MAX_PRESET_NAME = 40;
 
 export function clamp(value, low, high) {
   return Math.max(low, Math.min(high, Number(value)));
 }
 
-export function stickOffset(x, y, max = 2.2) {
+export function stickOffset(x, y, max = 1.6) {
   return [clamp(x, -1, 1) * max, clamp(y, -1, 1) * max];
 }
 
@@ -69,18 +94,43 @@ export function mappingSummary(entry, action) {
   return (entry.sequence || []).map((segment) => segment.join("+")).join(" / ") || "-";
 }
 
-// Append a captured chord segment to a sequence text field.
-export function appendKeys(text, codes, newSegment = false) {
-  const joined = (codes || []).join(", ");
-  if (!joined) return String(text || "");
-  const current = String(text || "").trim();
-  if (!current) return joined;
-  if (newSegment) return `${current.replace(/;\s*$/, "")}; ${joined}`;
-  return `${current}, ${joined}`;
+// Stable string for comparing a live mapping document with a saved preset.
+// Keys are sorted so object insertion order never affects the comparison.
+function sortedValue(value) {
+  if (Array.isArray(value)) return value.map(sortedValue);
+  if (value && typeof value === "object") {
+    return Object.keys(value).sort().reduce((acc, key) => {
+      acc[key] = sortedValue(value[key]);
+      return acc;
+    }, {});
+  }
+  return value;
 }
 
-export function appendKey(text, code, newSegment = false) {
-  return appendKeys(text, [code], newSegment);
+export function mappingSignature(document) {
+  if (!document) return "";
+  return JSON.stringify(sortedValue({
+    enabled: document.enabled !== false,
+    mappings: document.mappings || {},
+    actions: document.actions || {},
+    touchpad: document.touchpad || {},
+  }));
+}
+
+// Replace the segment at ``index`` with ``keys``, or append it when the index
+// is at (or past) the end. Returns a new sequence; never mutates the input.
+export function setSegment(sequence, index, keys) {
+  const next = (sequence || []).map((segment) => [...segment]);
+  const segment = [...(keys || [])];
+  if (segment.length === 0) return next;
+  if (index >= next.length) next.push(segment);
+  else next[index] = segment;
+  return next.slice(0, MAX_CHORD_SEGMENTS);
+}
+
+// Drop the segment at ``index``. Returns a new sequence.
+export function removeSegment(sequence, index) {
+  return (sequence || []).filter((_, position) => position !== index);
 }
 
 // Entry -> form fields for editing.

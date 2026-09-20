@@ -1,4 +1,4 @@
-"""Mapping engine: trigger modes, chords and actions. See plan.md §7.
+"""Mapping engine: trigger modes, chords and actions.
 
 The engine is pure logic. It reads decoded inputs through :meth:`MappingEngine.press`
 and :meth:`MappingEngine.release` and writes output through an injected object:
@@ -16,7 +16,7 @@ an injected callback.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Iterable
 
 from .keys import SCROLL_CODES
 from .store import DEFAULT_CHORD_DELAY_MS, STICK_DIRECTIONS
@@ -25,6 +25,44 @@ _TimerCallback = Callable[[float], None]
 
 STICK_ACTIVATION_THRESHOLD = 0.68
 STICK_RELEASE_THRESHOLD = 0.42
+# A perpendicular axis this much stronger than the held one takes over.
+STICK_PERPENDICULAR_RATIO = 0.8
+
+
+def _clamp_unit(value: object) -> float:
+    return max(-1.0, min(1.0, float(value)))
+
+
+def _directions(side: str) -> tuple[str, ...]:
+    """Cardinal input names for one stick, in ``STICK_DIRECTIONS`` order."""
+    prefix = f"{side}_stick_"
+    return tuple(name for name in STICK_DIRECTIONS if name.startswith(prefix))
+
+
+def _resolve_stick(
+    x: float,
+    y: float,
+    directions: tuple[str, ...],
+    held: str | None,
+) -> str | None:
+    """Resolve one stick to at most one cardinal direction, with hysteresis.
+
+    A ``held`` direction survives while its component stays at or above
+    ``STICK_RELEASE_THRESHOLD`` and the perpendicular axis has not overrun it by
+    ``STICK_PERPENDICULAR_RATIO``. Otherwise the strongest axis wins, but only
+    once it reaches ``STICK_ACTIVATION_THRESHOLD``.
+    """
+    up, right, down, left = directions
+    strength = {up: -y, right: x, down: y, left: -x}
+
+    if held is not None:
+        perpendicular = abs(x) if held in (up, down) else abs(y)
+        floor = max(STICK_RELEASE_THRESHOLD, perpendicular * STICK_PERPENDICULAR_RATIO)
+        if strength[held] >= floor:
+            return held
+
+    candidate = max(directions, key=lambda direction: strength[direction])
+    return candidate if strength[candidate] >= STICK_ACTIVATION_THRESHOLD else None
 
 
 def resolve_stick_directions(
@@ -32,32 +70,17 @@ def resolve_stick_directions(
     left_y: float,
     right_x: float,
     right_y: float,
-    active: object = frozenset(),
+    active: Iterable[str] = frozenset(),
 ) -> set[str]:
-    """Map both sticks to one hysteretic cardinal direction each (plan.md §4)."""
-    previous = set(active) & set(STICK_DIRECTIONS)
+    """Map both sticks to one hysteretic cardinal direction each."""
+    held = set(active) & set(STICK_DIRECTIONS)
     resolved: set[str] = set()
-    sticks = (
-        (("left_stick_up", "left_stick_right", "left_stick_down", "left_stick_left"), left_x, left_y),
-        (("right_stick_up", "right_stick_right", "right_stick_down", "right_stick_left"), right_x, right_y),
-    )
-    for directions, x, y in sticks:
-        x = max(-1.0, min(1.0, float(x)))
-        y = max(-1.0, min(1.0, float(y)))
-        up, right, down, left = directions
-        components = {up: -y, right: x, down: y, left: -x}
-        current = next((direction for direction in directions if direction in previous), None)
-        if current is not None:
-            perpendicular = abs(x) if current in (up, down) else abs(y)
-            if (
-                components[current] >= STICK_RELEASE_THRESHOLD
-                and components[current] >= perpendicular * 0.8
-            ):
-                resolved.add(current)
-                continue
-        candidate = max(directions, key=components.__getitem__)
-        if components[candidate] >= STICK_ACTIVATION_THRESHOLD:
-            resolved.add(candidate)
+    for side, x, y in (("left", left_x, left_y), ("right", right_x, right_y)):
+        directions = _directions(side)
+        previous = next((name for name in directions if name in held), None)
+        chosen = _resolve_stick(_clamp_unit(x), _clamp_unit(y), directions, previous)
+        if chosen is not None:
+            resolved.add(chosen)
     return resolved
 
 
@@ -148,10 +171,10 @@ class MappingEngine:
         if binding is None or not binding.pressed:
             return
         binding.pressed = False
-        binding.generation += 1
         if binding.entry["mode"] == "hold":
             self._deactivate(binding)
-        # repeat stops via the generation check; single/toggle keep their state.
+        # Repeat stops via the pressed check; a pending chord step for `single`
+        # must survive the release so a quick tap still plays every segment.
 
     def release_all(self) -> None:
         for binding in self._bindings.values():
@@ -254,6 +277,7 @@ class MappingEngine:
 __all__ = [
     "MappingEngine",
     "STICK_ACTIVATION_THRESHOLD",
+    "STICK_PERPENDICULAR_RATIO",
     "STICK_RELEASE_THRESHOLD",
     "resolve_stick_directions",
 ]

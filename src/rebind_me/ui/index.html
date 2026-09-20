@@ -4,60 +4,101 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rebind Me</title>
+    <link rel="icon" href="/assets/tray.ico" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header>
       <h1>Rebind Me</h1>
       <div class="status">
-        <span id="status-device" class="badge">device: ?</span>
-        <span id="status-state" class="badge">state: ?</span>
-        <label class="inline">Theme
-          <select id="theme">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-        </label>
+        <span id="save-state" class="save-state" data-state="idle" role="status" aria-live="polite"></span>
       </div>
     </header>
 
-    <div id="message" class="message" hidden></div>
-
     <main>
-      <section class="card">
-        <div class="card-head">
-          <h2>Controller</h2>
-          <div class="toolbar">
-            <label class="inline"><input type="checkbox" id="mapping-enabled" /> Enabled</label>
-            <button id="save-mapping">Save mappings</button>
-          </div>
+      <div class="workspace">
+        <div class="pane pane-left">
+          <section class="card">
+            <div class="card-head">
+              <h2>Controller</h2>
+              <div class="toolbar">
+                <label class="switch">
+                  <input type="checkbox" id="mapping-enabled" />
+                  <span class="switch-ui" aria-hidden="true"></span>
+                  <span class="switch-text">Enabled</span>
+                </label>
+              </div>
+            </div>
+            <div class="preset-bar">
+              <select id="preset-select" aria-label="Mapping preset"></select>
+              <button type="button" id="preset-apply" class="secondary">Apply</button>
+              <button type="button" id="preset-delete" class="secondary">Delete</button>
+              <button type="button" id="preset-new" class="secondary">New preset</button>
+            </div>
+            <p id="preset-hint" class="preset-hint" hidden></p>
+            <div id="preset-create" class="preset-create hidden">
+              <input type="text" id="preset-new-name" aria-label="New preset name" maxlength="40" placeholder="preset name" />
+              <button type="button" id="preset-new-save">Save</button>
+              <button type="button" id="preset-new-cancel" class="ghost">Cancel</button>
+            </div>
+            <p class="sub">Click a controller button to record straight away — hold the keys together for a chord. Use Add key inside a mapping to chain one more step, and Cancel to abort.</p>
+            <div id="controller" class="controller"></div>
+            <div class="status controller-status">
+              <span id="status-device" class="badge">device: ?</span>
+              <span id="status-state" class="badge">state: ?</span>
+            </div>
+            <div id="recorder" class="recorder" hidden>
+              <span class="rec-dot" aria-hidden="true"></span>
+              <span id="recorder-text">Listening for keys…</span>
+              <button type="button" id="recorder-cancel" class="secondary">Cancel</button>
+            </div>
+            <div id="message" class="message" hidden></div>
+          </section>
         </div>
-        <p class="sub">Click a button to edit it. Click <strong>Record</strong>, then press a key to map it.</p>
-        <div id="controller" class="controller"></div>
-      </section>
 
-      <section class="card">
-        <div class="card-head"><h2>Selected: <span id="editor-name">-</span></h2></div>
-        <div id="editor" class="editor"></div>
-      </section>
+        <div class="pane pane-right">
+          <section class="card" id="settings-card">
+            <div class="tabs" role="tablist">
+              <button type="button" class="tab active" role="tab" id="tab-mappings" aria-selected="true" aria-controls="panel-mappings" data-tab="mappings">Mappings</button>
+              <button type="button" class="tab" role="tab" id="tab-touchpad" aria-selected="false" tabindex="-1" aria-controls="panel-touchpad" data-tab="touchpad">Touchpad</button>
+              <button type="button" class="tab" role="tab" id="tab-lighting" aria-selected="false" tabindex="-1" aria-controls="panel-lighting" data-tab="lighting">Lighting</button>
+              <button type="button" class="tab" role="tab" id="tab-triggers" aria-selected="false" tabindex="-1" aria-controls="panel-triggers" data-tab="triggers">Triggers</button>
+              <button type="button" class="tab" role="tab" id="tab-mic" aria-selected="false" tabindex="-1" aria-controls="panel-mic" data-tab="mic">Mic</button>
+              <button type="button" class="tab" role="tab" id="tab-integrations" aria-selected="false" tabindex="-1" aria-controls="panel-integrations" data-tab="integrations">Integrations</button>
+            </div>
 
-      <details>
-        <summary>Touchpad</summary>
-        <div id="touchpad" class="form"></div>
-        <div class="toolbar"><button id="save-touchpad">Save touchpad</button></div>
-      </details>
+            <div class="tab-panel" id="panel-mappings" role="tabpanel" aria-labelledby="tab-mappings" data-panel="mappings">
+              <div class="panel-head">
+                <span class="sub">Every button and what it is mapped to. Click a controller button to re-record, or a row to change its options.</span>
+                <div class="toolbar">
+                  <span id="editor-name" class="sel-name">-</span>
+                </div>
+              </div>
+              <div id="mappings" class="mappings"></div>
+            </div>
 
-      <details>
-        <summary>Lighting</summary>
-        <div id="lighting" class="form"></div>
-        <div class="toolbar"><button id="save-lighting">Save lighting</button></div>
-      </details>
+            <div class="tab-panel hidden" id="panel-touchpad" role="tabpanel" aria-labelledby="tab-touchpad" data-panel="touchpad">
+              <div id="touchpad" class="form"></div>
+            </div>
 
-      <details>
-        <summary>Triggers</summary>
-        <div id="triggers" class="form"></div>
-        <div class="toolbar"><button id="save-triggers">Save triggers</button></div>
-      </details>
+            <div class="tab-panel hidden" id="panel-lighting" role="tabpanel" aria-labelledby="tab-lighting" data-panel="lighting">
+              <div id="lighting" class="form"></div>
+            </div>
+
+            <div class="tab-panel hidden" id="panel-triggers" role="tabpanel" aria-labelledby="tab-triggers" data-panel="triggers">
+              <div id="triggers" class="form"></div>
+            </div>
+
+            <div class="tab-panel hidden" id="panel-mic" role="tabpanel" aria-labelledby="tab-mic" data-panel="mic">
+              <div id="mic" class="form"></div>
+            </div>
+
+            <div class="tab-panel hidden" id="panel-integrations" role="tabpanel" aria-labelledby="tab-integrations" data-panel="integrations">
+              <div id="integrations" class="form"></div>
+            </div>
+          </section>
+        </div>
+      </div>
     </main>
 
     <script type="module" src="app.js"></script>

@@ -1,4 +1,4 @@
-"""Rotating file logging under ``%LOCALAPPDATA%\\RebindMe\\logs``. See plan.md §5."""
+"""Rotating file logging under ``%LOCALAPPDATA%\\RebindMe\\logs``."""
 
 from __future__ import annotations
 

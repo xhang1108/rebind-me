@@ -1,4 +1,4 @@
-"""SendInput keyboard / mouse / scroll injection. See plan.md §7.
+"""SendInput keyboard / mouse / scroll injection.
 
 Implements the output interface the mapping engine expects
 (``key_down`` / ``key_up`` / ``scroll``) plus ``mouse_move`` for the touchpad.

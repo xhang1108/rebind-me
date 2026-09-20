@@ -1,4 +1,4 @@
-"""Local HTTP API and same-origin static file serving. See plan.md §13.
+"""Local HTTP API and same-origin static file serving.
 
 One port (default ``127.0.0.1:4173``). UI endpoints are guarded by an
 Origin / Host allow-list; program endpoints require ``X-Bridge-Token``.
@@ -26,12 +26,15 @@ TOKEN_HEADER = "X-Bridge-Token"
 # path -> allowed methods
 ROUTES: dict[str, set[str]] = {
     "/api/status": {"GET"},
+    "/api/ui-active": {"POST"},
     "/api/mapping": {"GET", "PUT"},
-    "/api/lighting": {"GET", "PUT"},
-    "/api/triggers": {"GET", "PUT"},
+    "/api/presets": {"GET", "POST"},
+    "/api/mic": {"GET", "POST"},
     "/api/settings": {"GET", "PUT"},
     "/api/autostart": {"POST"},
+    "/api/plugin": {"GET", "POST"},
     "/api/key-capture": {"POST"},
+    "/api/key-capture/cancel": {"POST"},
     "/api/focus-terminal": {"POST"},
     "/api/scan-windows": {"POST"},
     "/api/sessions": {"POST"},
@@ -149,26 +152,34 @@ class ApiApp:
 
         if path == "/api/status":
             return _json_response(200, envelope_ok(backend.status()))
+        if path == "/api/ui-active":
+            return _json_response(200, envelope_ok(backend.ui_active(body)))
         if path == "/api/mapping":
             if request.method == "GET":
                 return _json_response(200, envelope_ok(backend.get_mapping()))
             return _json_response(200, envelope_ok(self._put(backend.put_mapping, body)))
-        if path == "/api/lighting":
+        if path == "/api/presets":
             if request.method == "GET":
-                return _json_response(200, envelope_ok(backend.get_lighting()))
-            return _json_response(200, envelope_ok(self._put(backend.put_lighting, body)))
-        if path == "/api/triggers":
+                return _json_response(200, envelope_ok(backend.get_presets()))
+            return _json_response(200, envelope_ok(backend.put_preset(body)))
+        if path == "/api/mic":
             if request.method == "GET":
-                return _json_response(200, envelope_ok(backend.get_triggers()))
-            return _json_response(200, envelope_ok(self._put(backend.put_triggers, body)))
+                return _json_response(200, envelope_ok(backend.get_mic()))
+            return _json_response(200, envelope_ok(backend.put_mic(body)))
         if path == "/api/settings":
             if request.method == "GET":
                 return _json_response(200, envelope_ok(backend.get_settings()))
             return _json_response(200, envelope_ok(self._put(backend.put_settings, body)))
         if path == "/api/autostart":
             return _json_response(200, envelope_ok(backend.autostart(body)))
+        if path == "/api/plugin":
+            if request.method == "GET":
+                return _json_response(200, envelope_ok(backend.plugin({})))
+            return _json_response(200, envelope_ok(backend.plugin(body)))
         if path == "/api/key-capture":
             return _json_response(200, envelope_ok(backend.key_capture()))
+        if path == "/api/key-capture/cancel":
+            return _json_response(200, envelope_ok(backend.cancel_key_capture()))
         if path == "/api/focus-terminal":
             return _json_response(200, envelope_ok(backend.focus_terminal(body)))
         if path == "/api/scan-windows":
@@ -233,7 +244,10 @@ class ApiServer:
         self.port = port
         self._httpd: ThreadingHTTPServer | None = None
 
-    def serve_forever(self) -> None:
+    def bind(self) -> None:
+        """Create the listening socket (raises ``OSError`` if the port is taken)."""
+        if self._httpd is not None:
+            return
         app = self.app
 
         class Handler(BaseHTTPRequestHandler):
@@ -255,6 +269,7 @@ class ApiServer:
                 self.send_response(response.status)
                 self.send_header("Content-Type", response.content_type)
                 self.send_header("Content-Length", str(len(response.body)))
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(response.body)
 
@@ -264,11 +279,20 @@ class ApiServer:
             do_DELETE = _dispatch
 
         self._httpd = ThreadingHTTPServer((self.host, self.port), Handler)
+
+    def serve_forever(self) -> None:
+        self.bind()
+        assert self._httpd is not None
         self._httpd.serve_forever()
 
     def shutdown(self) -> None:
         if self._httpd is not None:
             self._httpd.shutdown()
+
+    def server_close(self) -> None:
+        if self._httpd is not None:
+            self._httpd.server_close()
+            self._httpd = None
 
 
 __all__ = [

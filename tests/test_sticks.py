@@ -44,6 +44,14 @@ class StickDirectionTest(unittest.TestCase):
         released = resolve(ly=-0.1, active=held)
         self.assertEqual(released, set())
 
+    def test_hysteresis_keeps_direction_under_small_perpendicular_tilt(self) -> None:
+        kept = resolve(lx=0.6, ly=-0.3, active={"left_stick_right"})
+        self.assertEqual(kept, {"left_stick_right"})
+
+    def test_perpendicular_axis_takes_over_held_direction(self) -> None:
+        taken = resolve(lx=0.5, ly=-0.9, active={"left_stick_right"})
+        self.assertEqual(taken, {"left_stick_up"})
+
     def test_ignores_non_stick_active_inputs(self) -> None:
         self.assertEqual(resolve(active={"cross", "circle"}), set())
 

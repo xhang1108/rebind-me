@@ -1,9 +1,9 @@
 """Package entry point.
 
 ``python -m rebind_me`` launches the bridge. ``python -m rebind_me tray``
-launches the tray. The tray normally starts at logon from the HKCU ``...\\Run``
-key; the bridge starts from an elevated scheduled task. Real wiring lands in
-later stages.
+launches the tray. The tray normally starts at startup from the HKCU ``...\\Run``
+key; the bridge starts from an elevated scheduled task. ``autostart`` manages
+that wiring and ``plugin`` installs the opencode integration.
 """
 
 from __future__ import annotations
@@ -22,6 +22,16 @@ def main(argv: list[str] | None = None) -> int:
         from rebind_me.tray import main as tray_main
 
         return tray_main(args[1:])
+
+    if args and args[0] == "autostart":
+        from rebind_me.autostart import main as autostart_main
+
+        return autostart_main(args[1:])
+
+    if args and args[0] == "plugin":
+        from rebind_me.opencode_plugin import main as plugin_main
+
+        return plugin_main(args[1:])
 
     from rebind_me.bridge import Bridge
 

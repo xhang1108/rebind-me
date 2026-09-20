@@ -1,12 +1,18 @@
 {
-  "name": "@xhang98/rebind-me",
+  "name": "rebind-me",
   "version": "0.1.0",
   "description": "opencode plugin that forwards session events to the Rebind Me bridge",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
   "files": [
-    "index.js"
+    "index.ts",
+    "events.mjs",
+    "bridge.mjs"
   ],
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -16,5 +22,10 @@
     "opencode",
     "opencode-plugin",
     "rebind-me"
-  ]
+  ],
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.30",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
 }

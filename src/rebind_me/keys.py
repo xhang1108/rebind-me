@@ -1,4 +1,4 @@
-"""Key, mouse and scroll code names. See plan.md §7 and §14.
+"""Key, mouse and scroll code names.
 
 Code names follow ``KeyboardEvent.code`` (``KeyK``, ``ControlLeft``,
 ``ArrowUp``, ...). Mouse buttons use ``MouseLeft`` / ``MouseRight`` / ... and

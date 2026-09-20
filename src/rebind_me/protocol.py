@@ -1,4 +1,4 @@
-"""DualSense USB report decode / encode. See plan.md §6 and PROTOCOL.md.
+"""DualSense USB report decode / encode. See PROTOCOL.md.
 
 Input report ID ``0x01`` (64 bytes on the wire). Output report ID ``0x02``
 (48 bytes including the report ID). All offsets are into the full report, so
@@ -155,10 +155,7 @@ def decode_input_report(report: bytes) -> InputState:
         if face_dpad & (1 << bit):
             buttons.add(name)
 
-    shoulder_bits = (
-        "l1", "r1", "l2", "r2", "create", "options", "l3", "r3",
-    )
-    for bit, name in enumerate(shoulder_bits):
+    for bit, name in enumerate(SHOULDER_BUTTONS):
         if misc & (1 << bit):
             buttons.add(name)
 

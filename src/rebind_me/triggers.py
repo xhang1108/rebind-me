@@ -1,4 +1,4 @@
-"""Adaptive trigger normalization and encoding. See plan.md §10.
+"""Adaptive trigger normalization and encoding.
 
 Effect encoding itself lives in :mod:`rebind_me.protocol`; this module owns the
 range rules and the wire-format factory.

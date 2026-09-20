@@ -9,6 +9,7 @@ description = "Use a DualSense controller as a local input remapper on Windows 1
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{ name = "xhang1108" }]
 keywords = ["dualsense", "controller", "remap", "windows", "hid"]
 classifiers = [

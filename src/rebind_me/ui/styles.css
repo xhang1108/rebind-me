@@ -9,7 +9,7 @@
   --accent: #4c8bf5;
   --accent-soft: #24344e;
   --hover: #ffd166;
-  --select: #c084fc;
+  --select: #ffd166;
   --pressed: #ffffff;
   --border: #2c3540;
   --ok: #3fb950;
@@ -30,7 +30,7 @@
   --accent: #2563eb;
   --accent-soft: #dbe6fb;
   --hover: #c2410c;
-  --select: #7c3aed;
+  --select: #c2410c;
   --pressed: #111827;
   --border: #d5dbe3;
   --ok: #1a7f37;
@@ -106,10 +106,47 @@ header h1 {
 }
 
 main {
-  max-width: 1060px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 18px;
 }
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(360px, 580px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.pane-left {
+  position: sticky;
+  top: 70px;
+}
+
+@media (max-width: 880px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pane-left {
+    position: static;
+  }
+
+  #settings-card {
+    height: auto;
+  }
+
+  .tab-panel,
+  .tab-panel[data-panel="mappings"],
+  .mappings {
+    overflow: visible;
+  }
+
+  .map-group-title {
+    position: static;
+  }
+}
+
 
 .card,
 details {
@@ -215,6 +252,83 @@ textarea:focus {
   color: var(--muted);
 }
 
+/* -- toggle switch ------------------------------------------------------ */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-ui {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.switch-ui::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.switch input:checked + .switch-ui {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.switch input:checked + .switch-ui::after {
+  transform: translateX(18px);
+  background: var(--accent);
+}
+
+.switch input:focus-visible + .switch-ui {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.switch input:checked ~ .switch-text {
+  color: var(--text);
+}
+
+/* -- disabled (toggled off) -------------------------------------------- */
+.is-disabled {
+  opacity: 0.4;
+  filter: grayscale(0.75);
+}
+
+.is-disabled .pad-svg svg .hit,
+.is-disabled .hitbox,
+.is-disabled .touchpad-half,
+.is-disabled .touchpad-hit {
+  pointer-events: none;
+}
+
+.pad-svg svg path.knob.snapped {
+  fill: var(--select);
+  filter: drop-shadow(0 0 4px var(--select));
+}
+
 .sub {
   color: var(--muted);
   font-size: 12px;
@@ -225,11 +339,20 @@ textarea:focus {
   display: none !important;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 /* -- controller --------------------------------------------------------- */
 .controller {
   width: 100%;
-  max-width: 620px;
+  max-width: 640px;
   margin: 8px auto 0;
+}
+
+.controller-status {
+  margin-top: 14px;
+  justify-content: center;
 }
 
 .pad-wrap {
@@ -256,7 +379,7 @@ textarea:focus {
   pointer-events: all;
   stroke: transparent;
   stroke-width: 6.25;
-  transition: fill 0.1s ease, stroke 0.1s ease;
+  transition: fill 0.1s ease, stroke 0.1s ease, filter 0.1s ease;
 }
 
 .hitbox {
@@ -267,61 +390,323 @@ textarea:focus {
   pointer-events: none;
 }
 
-.pad-svg svg .hit.mapped {
-  fill: var(--accent);
-}
+/* -- highlight model ---------------------------------------------------
+   Colour (selected > hover > mapped) decides the glyph colour. The active
+   state (pressed / clicked) is always WHITE and is declared last so it sits
+   on the top layer, covering selection / hover / mapped when an input is
+   pressed. */
 
-.pad-svg svg .hit.selected {
-  fill: var(--select);
-  filter: drop-shadow(0 0 4px var(--select));
-}
-
+.pad-svg svg .hit.selected { fill: var(--select); }
+.pad-svg svg .hit.mapped { fill: var(--accent); }
 .pad-svg svg .hit.hover,
-.pad-svg svg .hit:hover {
-  fill: var(--hover);
-  filter: none;
-}
+.pad-svg svg .hit:hover { fill: var(--hover); }
 
+.pad-svg svg path.st0.hit { fill: none; stroke: currentColor; }
+.pad-svg svg path.st0.hit.selected { stroke: var(--select); }
+.pad-svg svg path.st0.hit.mapped { stroke: var(--accent); }
+.pad-svg svg path.st0.hit.hover,
+.pad-svg svg path.st0.hit:hover { stroke: var(--hover); }
+
+/* Active (live input): solid white, top layer. Declared after the colour
+   rules so white always wins over selected / hover / mapped. */
 .pad-svg svg .hit.pressed {
   fill: var(--pressed);
   filter: drop-shadow(0 0 5px var(--hover));
 }
-
-.pad-svg svg path.st0.hit {
-  fill: none;
-  stroke: currentColor;
-}
-
-.pad-svg svg path.st0.hit.mapped {
-  fill: none;
-  stroke: var(--accent);
-}
-
-.pad-svg svg path.st0.hit.selected {
-  fill: none;
-  stroke: var(--select);
-  filter: drop-shadow(0 0 4px var(--select));
-}
-
-.pad-svg svg path.st0.hit.hover,
-.pad-svg svg path.st0.hit:hover {
-  fill: none;
-  stroke: var(--hover);
-  filter: none;
-}
-
 .pad-svg svg path.st0.hit.pressed {
   fill: none;
   stroke: var(--pressed);
   filter: drop-shadow(0 0 5px var(--hover));
 }
 
-.dir {
-  position: absolute;
-  z-index: 3;
-  padding: 0;
-  border: 0;
+/* A physical click (button / stick press) makes the white brighter. */
+.pad-svg svg .hit.clicked {
+  fill: var(--pressed);
+  filter: brightness(1.4) drop-shadow(0 0 6px var(--hover)) drop-shadow(0 0 10px var(--pressed));
+}
+.pad-svg svg path.st0.hit.clicked {
+  fill: none;
+  stroke: var(--pressed);
+  filter: brightness(1.4) drop-shadow(0 0 6px var(--hover)) drop-shadow(0 0 10px var(--pressed));
+}
+
+/* -- touchpad halves --------------------------------------------------- */
+/* Whole-pad hit area: the pad is drawn as a hollow frame, so this transparent
+   rectangle makes its blank middle hover and click like the rest of the pad. */
+.pad-svg svg .touchpad-hit {
+  cursor: pointer;
+}
+
+/* Two transparent overlays on the touchpad; the active side lights up from
+   status.touchpadZone so a left / right press shows on the matching side. */
+.pad-svg svg .touchpad-half {
+  cursor: pointer;
+  pointer-events: all;
+  opacity: 0;
+  transition: opacity 0.12s ease, fill 0.12s ease;
+}
+
+.pad-svg svg .touchpad-half.selected {
+  fill: var(--select);
+  opacity: 1;
+}
+
+/* Active side lights with its left / right gradient (fill set inline). These
+   come after .selected so the white gradient always sits on top. */
+.pad-svg svg .touchpad-half.pressed {
+  opacity: 1;
+  filter: drop-shadow(0 0 5px var(--pressed));
+}
+
+.pad-svg svg .touchpad-half.clicked {
+  opacity: 1;
+  filter: brightness(1.4) drop-shadow(0 0 6px var(--pressed)) drop-shadow(0 0 10px var(--pressed));
+}
+
+/* -- mappings list ------------------------------------------------------ */
+#settings-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: -2px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
   background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 12px;
+  font-weight: 600;
+}
+
+.tab:hover {
+  filter: none;
+  color: var(--text);
+}
+
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tab-panel.hidden {
+  display: none !important;
+}
+
+.tab-panel[data-panel="mappings"] {
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-head .sub {
+  flex: 1;
+  margin: 0 0 10px;
+}
+
+.mappings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.map-group {
+  margin-bottom: 12px;
+}
+
+.map-group:last-child {
+  margin-bottom: 0;
+}
+
+.map-group-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 2px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.map-items {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 5px;
+}
+
+.map-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+  overflow: hidden;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.map-item.mapped {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.map-item.selected {
+  border-color: var(--select);
+  box-shadow: 0 0 0 1px var(--select);
+}
+
+.map-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.map-head:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  filter: none;
+}
+
+/* Fixed inputs (the mic button): read-only, not selectable. */
+.map-item.fixed {
+  border-style: dashed;
+}
+
+.map-item.fixed .map-head {
+  cursor: default;
+}
+
+.map-item.fixed .map-head:hover {
+  background: transparent;
+}
+
+.map-item.fixed .map-summary {
+  color: var(--select);
+}
+
+.map-name {
+  font-weight: 600;
+}
+
+.map-summary {
+  color: var(--muted);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  max-width: 62%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.map-item.mapped .map-summary {
+  color: var(--accent);
+}
+
+.map-item .editor {
+  padding: 6px 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.sel-name {
+  color: var(--select);
+  font-weight: 600;
+}
+
+/* -- presets (left pane) ------------------------------------------------ */
+.preset-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+
+.preset-bar select {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.preset-bar button.confirm {
+  color: #ffb4ab;
+  border-color: #b3261e;
+}
+
+.preset-hint {
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--select);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--select) 14%, var(--panel-2));
+  color: var(--text);
+  font-size: 12px;
+}
+
+.preset-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.preset-create input {
+  flex: 1;
+  min-width: 0;
+}
+
+.save-state {
+  min-width: 72px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.save-state[data-state="saved"] {
+  color: var(--ok);
+}
+
+.save-state[data-state="error"] {
+  color: #ffb4ab;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* -- editor ------------------------------------------------------------- */
@@ -351,13 +736,120 @@ textarea:focus {
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 
+/* -- chord steps -------------------------------------------------------- */
+.chords {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.chord {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
+
+.chord.recording {
+  border-color: var(--select);
+  box-shadow: 0 0 0 1px var(--select);
+}
+
+.chord-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.key-chip {
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.chord-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chord-actions {
+  display: flex;
+  gap: 4px;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+button.ghost:hover {
+  color: var(--text);
+  border-color: var(--border);
+  filter: none;
+}
+
+button.ghost.danger:hover {
+  color: #ffb4ab;
+  border-color: #b3261e;
+}
+
+button.ghost:disabled,
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* -- recorder overlay --------------------------------------------------- */
+.recorder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--select);
+  background: color-mix(in srgb, var(--select) 16%, var(--panel-2));
+  font-size: 13px;
+}
+
+.rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--select);
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+.recorder #recorder-text {
+  flex: 1;
+}
+
+
 .message {
-  max-width: 1060px;
-  margin: 12px auto 0;
-  padding: 11px 16px;
+  margin: 12px 0 0;
+  padding: 9px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--panel-2);
+  font-size: 13px;
 }
 
 .message.error {
@@ -372,7 +864,7 @@ textarea:focus {
 
 .row {
   display: grid;
-  grid-template-columns: 190px 120px 120px 1fr;
+  grid-template-columns: minmax(140px, 190px) minmax(90px, 120px) minmax(90px, 120px) minmax(0, 1fr);
   gap: 10px;
   align-items: center;
   padding: 5px 0;

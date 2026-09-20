@@ -1,4 +1,4 @@
-"""Error codes shared by the store, engine and API. See plan.md §13.
+"""Error codes shared by the store, engine and API.
 
 Codes are part of the public contract and must never change once published.
 """
@@ -13,6 +13,7 @@ ERROR_STATUS: dict[str, int] = {
     "INVALID_MODE": 400,
     "INVALID_TRIGGER_MODE": 400,
     "MAPPING_LIMIT": 400,
+    "PRESET_LIMIT": 400,
     "INVALID_SPLIT_X": 400,
     # 401
     "UNAUTHORIZED": 401,
@@ -22,6 +23,7 @@ ERROR_STATUS: dict[str, int] = {
     "ORIGIN_NOT_ALLOWED": 403,
     # 404
     "NOT_FOUND": 404,
+    "UNKNOWN_PRESET": 404,
     # 405
     "METHOD_NOT_ALLOWED": 405,
     # 408
@@ -41,7 +43,7 @@ ERROR_STATUS: dict[str, int] = {
 
 
 class RebindError(Exception):
-    """An error that maps to the API error envelope in plan.md §13."""
+    """An error that maps to the API error envelope."""
 
     def __init__(self, code: str, message: str = "", status: int | None = None):
         super().__init__(message or code)

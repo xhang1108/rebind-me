@@ -1,4 +1,4 @@
-"""Window enumeration, process names and foreground focus. See plan.md §16.
+"""Window enumeration, process names and foreground focus.
 
 Only same-desktop focus is implemented here; windows cloaked on another
 virtual desktop are filtered out of :meth:`Windows.list_windows` so callers do
@@ -39,6 +39,8 @@ user32.GetWindowThreadProcessId.argtypes = (
 user32.GetWindowThreadProcessId.restype = wintypes.DWORD
 user32.GetForegroundWindow.restype = wintypes.HWND
 user32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+user32.IsIconic.argtypes = (wintypes.HWND,)
+user32.IsIconic.restype = wintypes.BOOL
 user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
 user32.BringWindowToTop.argtypes = (wintypes.HWND,)
 user32.AttachThreadInput.argtypes = (wintypes.DWORD, wintypes.DWORD, wintypes.BOOL)
@@ -132,11 +134,20 @@ class Windows:
                 return window["hwnd"]
         return None
 
+    def foreground_hwnd(self) -> int:
+        """Handle of the foreground window, or 0 when there is none."""
+        return int(user32.GetForegroundWindow() or 0)
+
     def focus_window(self, hwnd: int) -> bool:
-        """Restore and foreground ``hwnd`` (same virtual desktop only)."""
+        """Foreground ``hwnd`` (same virtual desktop only).
+
+        Only a minimized window is restored; a maximized window is left at its
+        maximized size so focus does not resize it.
+        """
         if not user32.IsWindow(hwnd):
             return False
-        user32.ShowWindow(hwnd, SW_RESTORE)
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, SW_RESTORE)
         foreground = user32.GetForegroundWindow()
         current = kernel32.GetCurrentThreadId()
         foreground_thread = (

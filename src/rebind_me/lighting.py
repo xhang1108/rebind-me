@@ -1,4 +1,4 @@
-"""Light bar / player LEDs state machine. See plan.md §9.
+"""Light bar / player LEDs state machine.
 
 Produces a :class:`LightFrame` (RGB, brightness, player LEDs) for a given
 monotonic time. Effects: ``static``, ``breathe`` and ``blink``; speed is 1..5.

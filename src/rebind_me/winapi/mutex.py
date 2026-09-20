@@ -1,4 +1,4 @@
-"""Named-mutex single instance guard. See plan.md §5."""
+"""Named-mutex single instance guard."""
 
 from __future__ import annotations
 

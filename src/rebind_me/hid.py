@@ -1,4 +1,4 @@
-"""DualSense USB HID enumeration and I/O. See plan.md §4.
+"""DualSense USB HID enumeration and I/O.
 
 Standard library only, via ``ctypes``. The interface is selected by HID caps
 (``OutputReportByteLength == 48`` and ``InputReportByteLength >= 11``), never
@@ -16,6 +16,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 
 from .errors import RebindError
+from .winapi.occupant import find_device_occupant, list_conflicting_processes
 
 DUALSENSE_VENDOR_ID = 0x054C
 DUALSENSE_PRODUCT_ID = 0x0CE6
@@ -288,7 +289,7 @@ def _device_paths() -> list[str]:
 
 
 def enumerate_interfaces() -> list[HidInterface]:
-    """Return DualSense USB interfaces selected by HID caps (plan.md §4)."""
+    """Return DualSense USB interfaces selected by HID caps."""
     found: list[HidInterface] = []
     for path in _device_paths():
         handle = 0
@@ -520,7 +521,14 @@ def open_first_device() -> WindowsHidDevice:
     interface = find_dualsense()
     if interface is None:
         raise FileNotFoundError(2, "no DualSense over USB")
-    return WindowsHidDevice(interface)
+    try:
+        return WindowsHidDevice(interface)
+    except OSError as error:
+        winerror = getattr(error, "winerror", None) or error.errno
+        if winerror in (ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION):
+            error.occupant = find_device_occupant(interface.path)
+            error.conflicts = list_conflicting_processes()
+        raise
 
 
 __all__ = [

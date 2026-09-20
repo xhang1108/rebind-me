@@ -1,4 +1,4 @@
-"""Button actions. See plan.md §16.
+"""Button actions.
 
 Selection logic is pure (see :func:`choose_terminal`) so it can be tested with
 fake window and session data; execution goes through injected callables.
@@ -62,6 +62,7 @@ class ActionRunner:
         self.sessions_provider = sessions_provider or (lambda: [])
         self.toggle_mouse_mode = toggle_mouse_mode or (lambda: None)
         self.open_ui = open_ui or (lambda: None)
+        self._return_hwnd: int | None = None
 
     def run(self, name: str, action: str, params: dict | None = None) -> dict:
         params = params or {}
@@ -86,13 +87,40 @@ class ActionRunner:
         return {"focused": bool(focused), "hwnd": int(hwnd)}
 
     def _switch_to_app(self, process: str) -> dict:
+        """Focus ``process``, or toggle back to where the switch came from.
+
+        The first press remembers the window that was foreground and focuses
+        the target. Pressing again while the target is still foreground returns
+        to the remembered window, so one button becomes an app toggle.
+        """
         if not process:
             raise RebindError("SCHEMA_ERROR", "switch-to-app requires a process")
-        for window in self.windows.list_windows():
-            if _matches_process(self.windows.process_name(window["pid"]), process):
-                focused = self.windows.focus_window(window["hwnd"])
-                return {"focused": bool(focused), "hwnd": int(window["hwnd"])}
-        return {"focused": False, "reason": "not-running"}
+        candidates = self.windows.list_windows()
+        target = next(
+            (
+                window
+                for window in candidates
+                if _matches_process(self.windows.process_name(window["pid"]), process)
+            ),
+            None,
+        )
+        if target is None:
+            return {"focused": False, "reason": "not-running"}
+
+        hwnd = int(target["hwnd"])
+        current = self.windows.foreground_hwnd()
+        if hwnd == current and self._return_hwnd is not None:
+            back = self._return_hwnd
+            if not any(int(window["hwnd"]) == back for window in candidates):
+                self._return_hwnd = None
+                return {"focused": False, "reason": "gone"}
+            self._return_hwnd = current
+            focused = self.windows.focus_window(back)
+            return {"focused": bool(focused), "hwnd": back}
+
+        self._return_hwnd = current if current and current != hwnd else None
+        focused = self.windows.focus_window(hwnd)
+        return {"focused": bool(focused), "hwnd": hwnd}
 
 
 __all__ = ["ActionRunner", "STATUS_RANK", "choose_terminal"]

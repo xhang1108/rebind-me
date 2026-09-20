@@ -1,6 +1,6 @@
 """Rebind Me: use a DualSense controller as a local input remapper on Windows 11.
 
-Standard library only. See ``plan.md`` for the full design.
+Standard library only.
 """
 
 __version__ = "0.1.0"

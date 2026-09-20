@@ -1,4 +1,4 @@
-"""Persistent data model, preset and atomic store. See plan.md §5 and §14.
+"""Persistent data model, preset and atomic store.
 
 Version 1 only. There is no legacy migration: on first start (or after
 "restore defaults") the bundled preset is written and any unrecognised file is
@@ -23,9 +23,11 @@ from .triggers import normalize_triggers
 
 MAPPING_VERSION = 1
 SETTINGS_VERSION = 1
+PRESETS_VERSION = 1
 
 MAPPING_STORE_FILENAME = "mapping-store.json"
 SETTINGS_FILENAME = "settings.json"
+PRESETS_FILENAME = "presets.json"
 TOKEN_FILENAME = "bridge.token"
 LOGS_DIRNAME = "logs"
 DEFAULT_PORT = 4173
@@ -42,17 +44,32 @@ STICK_DIRECTIONS = (
 )
 INPUT_NAMES = BUTTON_NAMES + STICK_DIRECTIONS
 
+# The touchpad's tap and click zones are not buttons: the bridge drives them
+# from touch gestures. Each one is still a full mapping / action target, so
+# they extend the set of names a mapping document may address.
+TOUCHPAD_ZONE_INPUTS = (
+    "touchpad_tap_left",
+    "touchpad_tap_right",
+    "touchpad_click_left",
+    "touchpad_click_right",
+)
+MAPPABLE_INPUTS = INPUT_NAMES + TOUCHPAD_ZONE_INPUTS
+
 MAPPING_MODES = ("single", "repeat", "hold", "toggle")
 ACTIONS = ("focus-terminal", "switch-to-app", "toggle-mouse-mode", "open-config-ui")
 
+# The mic button is a fixed hardware control owned by the bridge: it is never
+# a mapping or action target, and any stale entry for it is dropped.
+RESERVED_INPUTS = ("mute",)
+
 MAX_CHORD_SEGMENTS = 2
 MAX_KEYS_PER_SEGMENT = 5
+MAX_PRESETS = 50
+MAX_PRESET_NAME = 40
 REPEAT_MIN_MS = 10
 REPEAT_MAX_MS = 2000
 DEFAULT_REPEAT = {"delayMs": 300, "intervalMs": 50}
 DEFAULT_CHORD_DELAY_MS = 80
-TOUCHPAD_MAX_X = 1919
-
 _EFFECTS = ("static", "breathe", "blink")
 _STATUS_STATES = ("idle", "working", "approval", "error")
 
@@ -75,7 +92,10 @@ DEFAULT_MAPPING_STORE: dict = {
             "repeat": dict(DEFAULT_REPEAT),
         },
         "right_stick_up": {"mode": "single", "scroll": "ScrollUp"},
-        "touchpad": {"mode": "single", "mouse": "MouseLeft"},
+        "touchpad_tap_left": {"mode": "single", "mouse": "MouseLeft"},
+        "touchpad_tap_right": {"mode": "single", "mouse": "MouseRight"},
+        "touchpad_click_left": {"mode": "single", "mouse": "MouseLeft"},
+        "touchpad_click_right": {"mode": "single", "mouse": "MouseRight"},
     },
     "actions": {
         "triangle": {"action": "switch-to-app", "params": {"process": "OpenChamber"}},
@@ -84,9 +104,6 @@ DEFAULT_MAPPING_STORE: dict = {
     "touchpad": {
         "mouseControl": True,
         "sensitivity": 1.5,
-        "splitX": 960,
-        "tap": {"left": "MouseLeft", "right": "MouseRight"},
-        "click": {"left": "MouseLeft", "right": "MouseRight"},
     },
 }
 
@@ -99,6 +116,9 @@ DEFAULT_SETTINGS: dict = {
         "brightness": 100,
         "playerLeds": 0,
         "muteLedInvert": False,
+        "autoMuteSeconds": 60,
+        "micButton": "",
+        "micButtonMode": "push",
         "status": {
             "idle": {"color": [0, 255, 0], "effect": "static", "speed": 3},
             "working": {"color": [255, 0, 0], "effect": "breathe", "speed": 3},
@@ -113,6 +133,14 @@ DEFAULT_SETTINGS: dict = {
     },
     "port": DEFAULT_PORT,
     "autostart": {"bridge": False, "tray": False},
+}
+
+# Named snapshots of the mapping document. Each preset stores the same fields
+# the mapping store owns (enabled / mappings / actions / touchpad), so applying
+# one is a mapping replace. The store starts empty: presets are user-created.
+DEFAULT_PRESETS: dict = {
+    "version": PRESETS_VERSION,
+    "presets": {},
 }
 
 
@@ -222,14 +250,6 @@ def _validate_action(entry: object) -> dict:
     return {"action": action}
 
 
-def _validate_zone_mouse(value: object) -> str:
-    if value in (None, ""):
-        return ""
-    if value not in MOUSE_BUTTON_CODES:
-        raise RebindError("INVALID_KEY_CODE", f"unknown mouse code: {value!r}")
-    return str(value)
-
-
 def _validate_touchpad(value: object) -> dict:
     if value is None:
         value = {}
@@ -240,26 +260,9 @@ def _validate_touchpad(value: object) -> dict:
     if not 0.1 <= sensitivity <= 5.0:
         raise _schema("touchpad.sensitivity must be 0.1..5.0")
 
-    split_x = int(value.get("splitX", 960))
-    if not 0 <= split_x <= TOUCHPAD_MAX_X:
-        raise RebindError("INVALID_SPLIT_X", f"splitX must be 0..{TOUCHPAD_MAX_X}")
-
-    def zones(raw: object) -> dict[str, str]:
-        if raw is None:
-            raw = {}
-        if not isinstance(raw, dict):
-            raise _schema("touchpad zones must be an object")
-        return {
-            "left": _validate_zone_mouse(raw.get("left")),
-            "right": _validate_zone_mouse(raw.get("right")),
-        }
-
     return {
         "mouseControl": bool(value.get("mouseControl", True)),
         "sensitivity": sensitivity,
-        "splitX": split_x,
-        "tap": zones(value.get("tap")),
-        "click": zones(value.get("click")),
     }
 
 
@@ -276,13 +279,17 @@ def validate_mapping_store(document: object) -> dict:
 
     mappings: dict[str, dict] = {}
     for name, entry in mappings_in.items():
-        if name not in INPUT_NAMES:
+        if name in RESERVED_INPUTS:
+            continue
+        if name not in MAPPABLE_INPUTS:
             raise RebindError("UNKNOWN_BUTTON", f"unknown button: {name!r}")
         mappings[name] = _validate_mapping(entry)
 
     actions: dict[str, dict] = {}
     for name, entry in actions_in.items():
-        if name not in INPUT_NAMES:
+        if name in RESERVED_INPUTS:
+            continue
+        if name not in MAPPABLE_INPUTS:
             raise RebindError("UNKNOWN_BUTTON", f"unknown button: {name!r}")
         if name in mappings:
             raise _schema(f"{name!r} cannot have both a mapping and an action")
@@ -295,6 +302,64 @@ def validate_mapping_store(document: object) -> dict:
         "actions": actions,
         "touchpad": _validate_touchpad(document.get("touchpad")),
     }
+
+
+def _validate_preset_name(name: object) -> str:
+    if not isinstance(name, str):
+        raise _schema("preset name must be a string")
+    cleaned = name.strip()
+    if not cleaned:
+        raise _schema("preset name must not be empty")
+    if len(cleaned) > MAX_PRESET_NAME:
+        raise RebindError(
+            "PRESET_LIMIT",
+            f"preset name must be at most {MAX_PRESET_NAME} characters",
+        )
+    if any(ord(character) < 32 for character in cleaned):
+        raise _schema("preset name must not contain control characters")
+    return cleaned
+
+
+def _validate_preset(body: object) -> dict:
+    """Validate one preset by reusing the mapping rules on its payload."""
+    if not isinstance(body, dict):
+        raise _schema("preset must be an object")
+    normalized = validate_mapping_store(
+        {
+            "version": MAPPING_VERSION,
+            "enabled": bool(body.get("enabled", True)),
+            "mappings": body.get("mappings", {}),
+            "actions": body.get("actions", {}),
+            "touchpad": body.get("touchpad"),
+        }
+    )
+    return {
+        "enabled": normalized["enabled"],
+        "mappings": normalized["mappings"],
+        "actions": normalized["actions"],
+        "touchpad": normalized["touchpad"],
+    }
+
+
+def validate_presets(document: object) -> dict:
+    if not isinstance(document, dict):
+        raise _schema("presets store must be an object")
+    if int(document.get("version", 0)) != PRESETS_VERSION:
+        raise _schema(f"unsupported presets version: {document.get('version')!r}")
+
+    presets_in = document.get("presets", {})
+    if not isinstance(presets_in, dict):
+        raise _schema("presets must be an object")
+    if len(presets_in) > MAX_PRESETS:
+        raise RebindError("PRESET_LIMIT", f"at most {MAX_PRESETS} presets are allowed")
+
+    presets: dict[str, dict] = {}
+    for name, body in presets_in.items():
+        key = _validate_preset_name(name)
+        if key in presets:
+            raise _schema(f"duplicate preset name: {key!r}")
+        presets[key] = _validate_preset(body)
+    return {"version": PRESETS_VERSION, "presets": presets}
 
 
 def _validate_light(value: object) -> dict:
@@ -342,6 +407,13 @@ def validate_settings(document: object) -> dict:
         raise _schema(f"unknown lighting.mode: {mode!r}")
     brightness = _clamp(int(lighting_in.get("brightness", 100)), 0, 100)
     player_leds = _clamp(int(lighting_in.get("playerLeds", 0)), 0, 0x1F)
+    auto_mute_seconds = _clamp(int(lighting_in.get("autoMuteSeconds", 60)), 0, 3600)
+    mic_button = str(lighting_in.get("micButton", "") or "").strip()
+    if mic_button and (mic_button in RESERVED_INPUTS or mic_button not in INPUT_NAMES):
+        raise RebindError("UNKNOWN_BUTTON", f"unknown mic button: {mic_button!r}")
+    mic_button_mode = str(lighting_in.get("micButtonMode", "push") or "push").strip().lower()
+    if mic_button_mode not in ("push", "toggle"):
+        raise _schema(f"unknown lighting.micButtonMode: {mic_button_mode!r}")
     status_in = lighting_in.get("status", {})
     if not isinstance(status_in, dict):
         raise _schema("lighting.status must be an object")
@@ -366,6 +438,9 @@ def validate_settings(document: object) -> dict:
             "brightness": brightness,
             "playerLeds": player_leds,
             "muteLedInvert": bool(lighting_in.get("muteLedInvert", False)),
+            "autoMuteSeconds": auto_mute_seconds,
+            "micButton": mic_button,
+            "micButtonMode": mic_button_mode,
             "status": status,
             "manual": manual,
         },
@@ -478,20 +553,29 @@ __all__ = [
     "DEFAULT_CHORD_DELAY_MS",
     "DEFAULT_MAPPING_STORE",
     "DEFAULT_PORT",
+    "DEFAULT_PRESETS",
     "DEFAULT_REPEAT",
     "DEFAULT_SETTINGS",
     "INPUT_NAMES",
     "JsonStore",
+    "MAPPABLE_INPUTS",
     "MAPPING_STORE_FILENAME",
     "MAPPING_VERSION",
+    "MAX_PRESET_NAME",
+    "MAX_PRESETS",
+    "PRESETS_FILENAME",
+    "PRESETS_VERSION",
+    "RESERVED_INPUTS",
     "SETTINGS_FILENAME",
     "SETTINGS_VERSION",
     "STICK_DIRECTIONS",
     "TOKEN_FILENAME",
+    "TOUCHPAD_ZONE_INPUTS",
     "atomic_write_json",
     "atomic_write_text",
     "load_or_create_token",
     "runtime_dir",
     "validate_mapping_store",
+    "validate_presets",
     "validate_settings",
 ]

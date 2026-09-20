@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from rebind_me import protocol as p
+from rebind_me.touchpad import SPLIT_X
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "dualsense_input"
 
@@ -68,9 +69,9 @@ class RecordedInputFixtureTest(unittest.TestCase):
         if "touchHalf" in expect:
             assert state.touch is not None
             if expect["touchHalf"] == "left":
-                self.assertLess(state.touch.x, 960)
+                self.assertLess(state.touch.x, SPLIT_X)
             else:
-                self.assertGreaterEqual(state.touch.x, 960)
+                self.assertGreaterEqual(state.touch.x, SPLIT_X)
         if "touch" in expect:
             expected_touch = expect["touch"]
             if expected_touch is None:

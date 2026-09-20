@@ -3,9 +3,8 @@
 Wire reference for the Rebind Me protocol layer (`src/rebind_me/protocol.py`).
 All offsets are into the **full report**, i.e. index `0` is the report ID.
 
-Facts below were established from public community reverse-engineering (Linux
-`hid-playstation.c`, `nondebug/dualsense`, `flok/pydualsense`, `DS5W`). See
-`THIRD_PARTY_NOTICES.md`. No third-party source code is used.
+Facts below were established from public community reverse-engineering; see
+[References](#references).
 
 - **USB only.** Bluetooth is out of scope.
 - **Input report ID `0x01`** (handle reads 64 bytes on Windows).
@@ -196,3 +195,19 @@ param2..5    = little_endian_32(force_zones)
 | weapon | 2 | 8 | 8 | `25 04 01 07 00 00 00 00 00 00 00` |
 | feedback | 3 | – | 5 | `21 f8 03 00 48 92 24 00 00 00 00` |
 | feedback | 0 | – | 8 | `21 ff 03 ff ff ff 3f 00 00 00 00` |
+
+## References
+
+The report layout, button bits and trigger effect encodings above are protocol
+facts established from public community reverse-engineering of the DualSense.
+These projects are cited as the sources of those facts:
+
+| Project | Upstream |
+|---|---|
+| `LYiHub/pub-ai-inputs` (`PS5 DualSense`) | github.com/LYiHub/pub-ai-inputs |
+| Linux kernel `hid-playstation.c` | torvalds/linux |
+| `nondebug/dualsense` | github.com/nondebug/dualsense |
+| `flok/pydualsense` | github.com/flok/pydualsense |
+| `DS5W` | github.com/Ohjurot/DS5W |
+| `dualsense-ts` | github.com/nsfm/dualsense-ts |
+| SDL `SDL_hidapi_ps5.c` | libsdl-org/SDL |

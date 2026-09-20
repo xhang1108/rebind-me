@@ -1,9 +1,12 @@
 # Rebind Me
 
-Use a **DualSense** controller as a local input remapper on Windows 11. Read
-buttons, sticks and the touchpad, map them to global keyboard / mouse input,
-drive the light bar and adaptive triggers, and integrate with opencode status
-lighting and OpenChamber window focus.
+A **DualSense** controller remapper for Windows 11. Map any button, stick or
+touchpad input to whatever you want — global keyboard and mouse input, the
+light bar, adaptive triggers. You decide the mapping.
+
+The only thing we special-case is **opencode** and **OpenChamber**: their
+shortcuts and a few special behaviours, above all the **status light** that
+reflects your opencode session state on the controller.
 
 - **Standard library only** — no third-party runtime dependencies.
 - **USB only**, single controller.
@@ -18,53 +21,51 @@ lighting and OpenChamber window focus.
 - Python 3.10 or newer
 - A DualSense controller connected over USB
 
-## Layout
+## Quick start
 
-```
-rebind-me/
-├─ pyproject.toml
-├─ run.cmd                    # manual normal-privilege start (tray)
-├─ install.cmd                # one-time elevated install
-├─ uninstall.cmd              # remove scheduled task + HKCU Run
-├─ rebind-me.pyw              # logon launcher (no console window)
-├─ src/rebind_me/
-│  ├─ __main__.py  tray.py
-│  ├─ protocol.py             # input decode / output encode
-│  ├─ hid.py                  # device enumeration / I/O / reconnect
-│  ├─ winapi/                 # ctypes Win32 bindings
-│  ├─ engine.py               # mapping engine
-│  ├─ actions.py              # action handlers
-│  ├─ lighting.py  triggers.py
-│  ├─ api.py                  # HTTP + static
-│  └─ ui/                     # index.html / app.js / styles.css
-├─ plugin/                    # opencode npm package
-├─ tests/                     # unittest + node --test
-└─ .github/workflows/ci.yml
-```
+### Install (recommended, once)
 
-## Install
+1. Right-click `install.cmd` and choose **Run as administrator** (one time).
+   This registers the elevated bridge to start at startup, adds the tray to
+   `HKCU\...\Run`, and starts the bridge immediately.
+2. Use the tray icon (notification area): **Open UI**, or just visit
+   <http://127.0.0.1:4173/> in a browser.
 
-1. Get the source and make sure Python 3.10+ is on `PATH`.
-2. Right-click `install.cmd` and choose **Run as administrator** (one time).
-   It registers the elevated bridge scheduled task, writes the tray `HKCU\Run`
-   entry, and starts the bridge.
-3. After that, use the tray icon to start / stop / restart.
+After that, start / stop / restart from the tray — no further UAC prompts.
+To remove it later, right-click `uninstall.cmd` and run it as administrator.
 
-`install.cmd` and `uninstall.cmd` are the only steps that need elevation.
+### Install the opencode plugin
 
-## Run manually
+The plugin reports opencode session state to the bridge (controller light) and
+powers the focus-terminal action. Double-click `install-plugin.cmd`, or use the
+tray UI's **Integrations** tab, or run it yourself:
 
 ```bat
+python -m rebind_me plugin install
+python -m rebind_me plugin status
+python -m rebind_me plugin uninstall
+```
+
+It adds `rebind-me` to the global opencode config when the package is
+published on npm; otherwise it copies the plugin into
+`~/.config/opencode/plugins/`. Restart opencode afterwards. `uninstall-plugin.cmd`
+removes it again.
+
+### Run without installing (manual / development)
+
+The bridge needs to write HID and inject input; an elevated terminal lets it
+target elevated windows too.
+
+```bat
+rem terminal 1 (bridge) - open as administrator for full functionality
+python -m rebind_me
+
+rem terminal 2 (tray), or double-click run.cmd
 run.cmd
 ```
 
-or, without the launcher:
-
-```bat
-python -m rebind_me
-```
-
-The UI is served at <http://127.0.0.1:4173/>.
+Then open <http://127.0.0.1:4173/>. If the scheduled task already exists,
+`run.cmd` starts the bridge for you instead of the manual command.
 
 ## Development
 
@@ -74,15 +75,8 @@ python -m unittest discover -s tests -v
 node --test
 ```
 
-The DualSense USB HID wire format (input/output offsets, bit fields, trigger
-encoding) is documented in [PROTOCOL.md](PROTOCOL.md). Recorded input
-fixtures live in `tests/fixtures/dualsense_input/`; see its README for the
-format and how to capture them from a real controller.
-
-## Status
-
-Early rewrite in progress. See `plan.md` for the full design and `TODO.md` for
-the implementation checklist.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the module layout, the HID wire format
+([PROTOCOL.md](PROTOCOL.md)), fixtures and the plugin internals.
 
 ## License
 
