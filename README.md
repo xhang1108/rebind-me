@@ -6,11 +6,16 @@ light bar, adaptive triggers. You decide the mapping.
 
 The only thing we special-case is **OpenCode 2** and **OpenChamber 2**: their
 shortcuts and a few special behaviours, above all the **status light** that
-reflects your OpenCode session state on the controller.
+reflects your OpenCode session state on the controller. The plugin is aligned
+with the OpenCode 2 / OpenChamber 2 plugin API — `setup(ctx)` plus the public
+event stream — and reports the four light states `error > approval > working >
+idle` from `session.execution.*`, with `permission` / `form` requests holding
+`approval` until they settle. OpenCode 1.x hooks are not supported.
 
 - **Standard library only** — no third-party runtime dependencies.
 - **USB only**, single controller.
 - **Portable** — a source checkout plus `.cmd` launchers; no installer.
+- **OpenCode 2 / OpenChamber 2 aligned** — V2 plugin API only.
 
 > DualSense is a trademark of Sony Interactive Entertainment. This project is
 > not affiliated with or endorsed by Sony.
