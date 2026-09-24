@@ -614,7 +614,7 @@ class Bridge:
         return dict(result, applied=True)
 
     def plugin(self, body: dict) -> dict:
-        """Report, install or remove the opencode plugin integration."""
+        """Report, install or remove the OpenCode 2 plugin integration."""
         action = str(body.get("action") or "").lower()
         if action not in ("", "status", "install", "uninstall"):
             raise RebindError("SCHEMA_ERROR", "unknown plugin action")

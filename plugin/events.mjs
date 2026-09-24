@@ -1,29 +1,56 @@
-// Pure mapping from opencode plugin events to bridge session status.
+// Pure mapping from OpenCode 2 events to bridge session state.
 //
-// Kept as plain ESM so it can be unit-tested with `node --test`, while the
-// typed hook adapter lives in index.ts.
-//
-// The bridge understands four statuses: "idle", "working", "approval", "error".
+// The OpenCode 2 public stream carries raw events with a `data` object. The
+// bridge understands four statuses: "idle", "working", "approval", "error".
 
 /**
  * @typedef {object} MappedEvent
  * @property {string} sessionID
- * @property {string} [status]  bridge status; absent when `deleted`
- * @property {boolean} [deleted]  true removes the session instead of upserting
+ * @property {string} [status] bridge status; absent for metadata-only events
+ * @property {boolean} [deleted] true removes the session instead of upserting
  */
 
-/** Event object properties, tolerating both `properties` and older `data`. */
-export function eventProperties(event) {
-  if (!event || typeof event !== "object") return {};
-  return event.properties ?? event.data ?? {};
+const asRecord = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
+
+const trimmed = (value) => (typeof value === "string" ? value.trim() : "");
+
+/** Return the canonical OpenCode 2 event data object. */
+export function eventData(event) {
+  return asRecord(asRecord(event).data);
 }
 
-/** Map an opencode session status to a bridge status (or null to ignore). */
+// Kept as a small compatibility alias for callers that used the old helper;
+// the plugin itself consumes only the V2 `data` shape.
+export function eventProperties(event) {
+  return eventData(event);
+}
+
+function sessionID(event, data = eventData(event)) {
+  const type = event?.type;
+  if (type === "form.created") return trimmed(asRecord(data.form).sessionID);
+  return trimmed(data.sessionID);
+}
+
+function requestID(event, kind, data = eventData(event)) {
+  if (kind === "permission") {
+    return trimmed(data.requestID) || trimmed(data.id);
+  }
+  if (kind === "form") {
+    if (event?.type === "form.created") return trimmed(asRecord(data.form).id);
+    return trimmed(data.id) || trimmed(data.requestID);
+  }
+  return "";
+}
+
+/** Map an OpenCode session status to a bridge status. */
 export function statusFor(status) {
-  const type = typeof status === "string" ? status : status?.type;
+  const type = typeof status === "string" ? status : asRecord(status).type;
   switch (type) {
     case "busy":
     case "retry":
+    case "working":
+    case "running":
       return "working";
     case "idle":
       return "idle";
@@ -32,115 +59,185 @@ export function statusFor(status) {
   }
 }
 
+const withSession = (id, status) => ({ sessionID: id, status });
+
 /**
- * Translate an opencode event into `{ sessionID, status }`, or `null` when the
- * event is irrelevant. Unknown events are silently ignored.
+ * Translate one raw OpenCode 2 event into a bridge update.
+ *
+ * This function is intentionally stateless. `createEventMapper()` layers the
+ * per-session phase and pending-request state on top of it.
  *
  * @param {any} event
  * @returns {MappedEvent | null}
  */
 export function mapEvent(event) {
   const type = event?.type;
-  const props = eventProperties(event);
-  const withSession = (status) =>
-    props.sessionID ? { sessionID: props.sessionID, status } : null;
+  const data = eventData(event);
+  const id = sessionID(event, data);
+  if (!id) return null;
 
   switch (type) {
+    case "session.execution.started":
+      return withSession(id, "working");
+    case "session.execution.succeeded":
+      return withSession(id, "idle");
+    case "session.execution.interrupted":
+      // OpenCode keeps the execution claim across a shutdown. The resumed
+      // drain will emit the real terminal outcome after restart.
+      return trimmed(data.reason) === "shutdown" ? null : withSession(id, "idle");
+    case "session.execution.failed":
+      return withSession(id, "error");
+
+    // These two are retained as defensive fallbacks for V2 servers that emit
+    // the legacy status events alongside execution events.
     case "session.status": {
-      const status = statusFor(props.status);
-      return status ? withSession(status) : null;
+      const status = statusFor(data.status);
+      return status ? withSession(id, status) : null;
     }
     case "session.idle":
-      return withSession("idle");
-    // NOTE: `session.updated` is deliberately ignored. opencode emits it for
-    // every session-info change (and even after `session.idle`), so treating it
-    // as "working" both sticks the light on working and clobbers "idle" and
-    // "approval". `session.status` (busy/idle) is the reliable work signal.
+      return withSession(id, "idle");
+
     case "permission.asked":
-    case "permission.v2.asked":
-    case "permission.updated": // defensive: older SDK naming
-      return withSession("approval");
+      return requestID(event, "permission", data) ? withSession(id, "approval") : null;
     case "permission.replied":
-    case "permission.v2.replied":
-      return withSession("working");
+      return requestID(event, "permission", data) ? withSession(id, "working") : null;
+
+    case "form.created":
+      return requestID(event, "form", data) ? withSession(id, "approval") : null;
+    case "form.replied":
+    case "form.cancelled":
+      return requestID(event, "form", data) ? withSession(id, "working") : null;
+
+    // Keep a defensive V2 error alias for servers that publish the translated
+    // name directly. The normal V2 source is session.execution.failed.
     case "session.error":
-      return withSession("error");
+      return withSession(id, "error");
+
     case "session.deleted":
-      return props.sessionID ? { sessionID: props.sessionID, deleted: true } : null;
+      return { sessionID: id, deleted: true };
+
+    case "session.created":
+    case "session.renamed":
+      // Metadata only. The adapter stores the title and deliberately does not
+      // send an empty status that could erase the current light state.
+      return { sessionID: id };
+
     default:
       return null;
   }
 }
 
-const PERMISSION_ASK = new Set([
-  "permission.asked",
-  "permission.v2.asked",
-  "permission.updated", // defensive: older SDK naming
-]);
-const PERMISSION_REPLY = new Set(["permission.replied", "permission.v2.replied"]);
+const PERMISSION_ASK = new Set(["permission.asked"]);
+const PERMISSION_REPLY = new Set(["permission.replied"]);
+const FORM_ASK = new Set(["form.created"]);
+const FORM_REPLY = new Set(["form.replied", "form.cancelled"]);
 
-/** True for the events that open a pending permission request. */
+/** True for the event that opens a pending permission request. */
 export function isPermissionAsk(event) {
   return PERMISSION_ASK.has(event?.type);
 }
 
-/** True for the events that resolve a pending permission request. */
+/** True for the event that resolves a pending permission request. */
 export function isPermissionReply(event) {
   return PERMISSION_REPLY.has(event?.type);
 }
 
+/** True for the event that opens a pending form request. */
+export function isFormAsk(event) {
+  return FORM_ASK.has(event?.type);
+}
+
+/** True for the event that resolves a pending form request. */
+export function isFormReply(event) {
+  return FORM_REPLY.has(event?.type);
+}
+
 /**
- * Stateful wrapper around `mapEvent` that keeps "approval" sticky: while a
- * session has an unanswered permission request, every report for it becomes
- * "approval", so a later `session.status` (busy/idle) cannot clear it. An error,
- * the reply, or deletion ends it.
+ * Add the per-session state machine around the pure V2 event mapping.
  *
- * @returns {(event: any) => MappedEvent | null}
+ * `phase` represents execution state; `pending` contains namespaced request
+ * IDs so multiple permission/form prompts can be outstanding at once.
  */
 export function createEventMapper() {
-  const pending = new Set();
-  return function map(event) {
-    const sessionID = eventProperties(event).sessionID;
-    if (!sessionID) return null;
+  const sessions = new Map();
 
-    if (isPermissionAsk(event)) pending.add(sessionID);
-    if (isPermissionReply(event) || event?.type === "session.deleted") pending.delete(sessionID);
-
-    const mapped = mapEvent(event);
-    if (mapped && pending.has(sessionID) && mapped.status !== "error") {
-      return { ...mapped, status: "approval" };
+  const getSession = (id) => {
+    let state = sessions.get(id);
+    if (!state) {
+      state = { phase: "idle", pending: new Set() };
+      sessions.set(id, state);
     }
-    return mapped;
+    return state;
+  };
+
+  const resolvedStatus = (state) => {
+    if (state.phase === "error") return "error";
+    if (state.pending.size > 0) return "approval";
+    return state.phase;
+  };
+
+  return function map(event) {
+    const mapped = mapEvent(event);
+    if (!mapped?.sessionID) return null;
+
+    const id = mapped.sessionID;
+    if (mapped.deleted) {
+      sessions.delete(id);
+      return mapped;
+    }
+
+    // A title event has no status and must not create execution state.
+    if (mapped.status === undefined) return mapped;
+
+    const state = getSession(id);
+    const type = event?.type;
+    const data = eventData(event);
+
+    switch (type) {
+      case "session.execution.started":
+        state.phase = "working";
+        break;
+      case "session.status":
+        // Defensive status/idle events must not erase a V2 execution error;
+        // only a new execution terminal event or start may recover from it.
+        if (state.phase !== "error") {
+          state.phase = mapped.status === "working" ? "working" : "idle";
+        }
+        break;
+      case "session.execution.succeeded":
+      case "session.execution.interrupted":
+        state.phase = "idle";
+        break;
+      case "session.idle":
+        if (state.phase !== "error") state.phase = "idle";
+        break;
+      case "session.execution.failed":
+      case "session.error":
+        state.phase = "error";
+        break;
+      case "permission.asked":
+        state.pending.add(`permission:${requestID(event, "permission", data)}`);
+        break;
+      case "permission.replied":
+        state.pending.delete(`permission:${requestID(event, "permission", data)}`);
+        break;
+      case "form.created":
+        state.pending.add(`form:${requestID(event, "form", data)}`);
+        break;
+      case "form.replied":
+      case "form.cancelled":
+        state.pending.delete(`form:${requestID(event, "form", data)}`);
+        break;
+      default:
+        break;
+    }
+
+    return { ...mapped, status: resolvedStatus(state) };
   };
 }
 
-const QUESTION_TOOL = "question";
-
-/**
- * Bridge status for a `question`-tool phase, or null for any other tool.
- *
- * The question tool blocks on the user's answer but is not a permission, so it
- * emits no `permission.asked` event; report approval for its whole run and go
- * back to working once it returns.
- */
-export function questionToolStatus(tool, phase) {
-  if (tool !== QUESTION_TOOL) return null;
-  if (phase === "before") return "approval";
-  if (phase === "after") return "working";
-  return null;
-}
-
-/**
- * Bridge status for an opencode permission evaluation, or null when it does not
- * wait on the user. `permission.ask` fires for every evaluation (including
- * `allow`/`deny`), so only the `ask` action means a pending approval.
- */
-export function permissionAskStatus(action) {
-  return action === "ask" ? "approval" : null;
-}
-
-/** Best-effort session title carried by the event, if any. */
+/** Best-effort session title carried by a V2 event, if any. */
 export function sessionTitle(event) {
-  const props = eventProperties(event);
-  return props.info?.title ?? props.title ?? "";
+  const data = eventData(event);
+  return trimmed(data.title) || trimmed(asRecord(data.info).title);
 }

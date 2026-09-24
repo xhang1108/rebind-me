@@ -1,4 +1,4 @@
-"""Tests for the opencode plugin installer (no real config dir, no registry)."""
+"""Tests for the OpenCode 2 plugin installer (no real config dir, no registry)."""
 
 import contextlib
 import io
@@ -13,6 +13,9 @@ from rebind_me.opencode_plugin import (
     BRIDGE_NAME,
     ENTRY_NAME,
     EVENTS_NAME,
+    LEGACY_PLUGIN_CONFIG_KEY,
+    MIN_OPENCODE_VERSION,
+    PLUGIN_CONFIG_KEY,
     PLUGIN_PACKAGE,
     OpenCodePluginInstaller,
     config_dir,
@@ -23,8 +26,12 @@ from rebind_me.opencode_plugin import (
 
 
 class FakeResponse:
-    def __init__(self, status: int) -> None:
+    def __init__(self, status: int, body: bytes | str | None = None) -> None:
         self.status = status
+        self._body = body
+
+    def read(self) -> bytes | str | None:
+        return self._body
 
     def __enter__(self) -> "FakeResponse":
         return self
@@ -37,9 +44,10 @@ def make_source(root: Path) -> Path:
     src = root / "src-plugin"
     src.mkdir(exist_ok=True)
     (src / "index.ts").write_text(
+        'import type { Plugin } from "@opencode/plugin";\n'
         'import { mapEvent } from "./events.mjs";\n'
         'import { reportSession } from "./bridge.mjs";\n'
-        "export default async () => ({});\n",
+        'export default { id: "rebind-me", setup() {} } satisfies Plugin;\n',
         encoding="utf-8",
     )
     (src / "events.mjs").write_text("export const mapEvent = () => null;\n", encoding="utf-8")
@@ -59,6 +67,12 @@ class DiscoveryTest(unittest.TestCase):
     def test_config_dir_honours_xdg(self) -> None:
         self.assertEqual(config_dir({"XDG_CONFIG_HOME": "C:\\xdg"}), Path("C:\\xdg") / "opencode")
 
+    def test_config_dir_honours_opencode_override(self) -> None:
+        self.assertEqual(
+            config_dir({"OPENCODE_CONFIG_DIR": "C:\\custom-opencode", "XDG_CONFIG_HOME": "C:\\xdg"}),
+            Path("C:\\custom-opencode"),
+        )
+
     def test_repo_plugin_dir_has_the_entry(self) -> None:
         self.assertTrue((repo_plugin_dir() / "index.ts").is_file())
 
@@ -66,7 +80,20 @@ class DiscoveryTest(unittest.TestCase):
         self.assertEqual(repo_plugin_dir({"REBIND_ME_PLUGIN_DIR": "C:\\x"}), Path("C:\\x"))
 
     def test_npm_published_reads_the_registry(self) -> None:
-        self.assertTrue(npm_published(urlopen_func=lambda *a, **k: FakeResponse(200)))
+        self.assertTrue(
+            npm_published(
+                urlopen_func=lambda *a, **k: FakeResponse(
+                    200, b'{"dist-tags":{"latest":"0.2.0"}}'
+                )
+            )
+        )
+        self.assertFalse(
+            npm_published(
+                urlopen_func=lambda *a, **k: FakeResponse(
+                    200, b'{"dist-tags":{"latest":"0.1.0"}}'
+                )
+            )
+        )
         self.assertFalse(npm_published(urlopen_func=lambda *a, **k: FakeResponse(404)))
 
     def test_npm_published_is_false_when_offline(self) -> None:
@@ -94,6 +121,7 @@ class CliTest(unittest.TestCase):
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(out):
             self.assertEqual(main(["status"]), 0)
         self.assertIn('"installed": false', out.getvalue())
+        self.assertIn('"minimumOpenCodeVersion": "2.0.15"', out.getvalue())
 
     def test_install_local_then_uninstall(self) -> None:
         with mock.patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()):
@@ -124,6 +152,8 @@ class LocalInstallTest(unittest.TestCase):
         self.assertFalse(status["installed"])
         self.assertIsNone(status["mode"])
         self.assertEqual(status["package"], PLUGIN_PACKAGE)
+        self.assertEqual(status["configKey"], PLUGIN_CONFIG_KEY)
+        self.assertEqual(status["minimumOpenCodeVersion"], MIN_OPENCODE_VERSION)
 
     def test_install_local_copies_and_rewrites_imports(self) -> None:
         result = self.installer.install(mode="local")
@@ -187,62 +217,104 @@ class NpmInstallTest(unittest.TestCase):
         config = self.installer.config_file()
         self.assertEqual(config.name, "opencode.json")
         document = json.loads(config.read_text(encoding="utf-8"))
-        self.assertIn(PLUGIN_PACKAGE, document["plugin"])
+        self.assertIn(PLUGIN_PACKAGE, document[PLUGIN_CONFIG_KEY])
+        self.assertNotIn(LEGACY_PLUGIN_CONFIG_KEY, document)
 
     def test_preserves_other_keys_and_plugins(self) -> None:
         config = self.installer.config_file()
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(
-            json.dumps({"model": "x", "plugin": ["other-plugin"]}), encoding="utf-8"
+            json.dumps({"model": "x", PLUGIN_CONFIG_KEY: ["other-plugin"]}), encoding="utf-8"
         )
         self.installer.install(mode="npm")
         document = json.loads(config.read_text(encoding="utf-8"))
         self.assertEqual(document["model"], "x")
-        self.assertEqual(document["plugin"], [PLUGIN_PACKAGE, "other-plugin"])
+        self.assertEqual(document[PLUGIN_CONFIG_KEY], [PLUGIN_PACKAGE, "other-plugin"])
 
-    def test_adds_plugin_key_when_absent(self) -> None:
+    def test_adds_plugins_key_when_absent(self) -> None:
         config = self.installer.config_file()
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(json.dumps({"model": "x"}), encoding="utf-8")
         self.installer.install(mode="npm")
         document = json.loads(config.read_text(encoding="utf-8"))
         self.assertEqual(document["model"], "x")
-        self.assertEqual(document["plugin"], [PLUGIN_PACKAGE])
+        self.assertEqual(document[PLUGIN_CONFIG_KEY], [PLUGIN_PACKAGE])
 
     def test_edits_existing_jsonc(self) -> None:
         config = self.installer.config_dir / "opencode.jsonc"
         config.parent.mkdir(parents=True, exist_ok=True)
-        config.write_text('{\n  "plugin": []\n}\n', encoding="utf-8")
+        config.write_text('{\n  "plugins": []\n}\n', encoding="utf-8")
         self.installer.install(mode="npm")
         document = json.loads(config.read_text(encoding="utf-8"))
-        self.assertEqual(document["plugin"], [PLUGIN_PACKAGE])
+        self.assertEqual(document[PLUGIN_CONFIG_KEY], [PLUGIN_PACKAGE])
+
+    def test_migrates_legacy_plugin_entry(self) -> None:
+        config = self.installer.config_file()
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            json.dumps({"model": "x", LEGACY_PLUGIN_CONFIG_KEY: [PLUGIN_PACKAGE, "old"]}),
+            encoding="utf-8",
+        )
+        self.installer.install(mode="npm")
+        document = json.loads(config.read_text(encoding="utf-8"))
+        self.assertEqual(document[PLUGIN_CONFIG_KEY], [PLUGIN_PACKAGE])
+        self.assertNotIn(PLUGIN_PACKAGE, document[LEGACY_PLUGIN_CONFIG_KEY])
+        self.assertIn("old", document[LEGACY_PLUGIN_CONFIG_KEY])
+
+    def test_does_not_duplicate_when_both_config_keys_exist(self) -> None:
+        config = self.installer.config_file()
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            json.dumps({
+                LEGACY_PLUGIN_CONFIG_KEY: [PLUGIN_PACKAGE],
+                PLUGIN_CONFIG_KEY: [PLUGIN_PACKAGE],
+            }),
+            encoding="utf-8",
+        )
+        self.installer.install(mode="npm")
+        document = json.loads(config.read_text(encoding="utf-8"))
+        self.assertEqual(document[PLUGIN_CONFIG_KEY].count(PLUGIN_PACKAGE), 1)
+        self.assertNotIn(PLUGIN_PACKAGE, document[LEGACY_PLUGIN_CONFIG_KEY])
 
     def test_install_is_idempotent(self) -> None:
         self.installer.install(mode="npm")
         second = self.installer.install(mode="npm")
         self.assertFalse(second["changed"])
         document = json.loads(self.installer.config_file().read_text(encoding="utf-8"))
-        self.assertEqual(document["plugin"].count(PLUGIN_PACKAGE), 1)
+        self.assertEqual(document[PLUGIN_CONFIG_KEY].count(PLUGIN_PACKAGE), 1)
+
+    def test_install_normalizes_duplicate_entries(self) -> None:
+        config = self.installer.config_file()
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            json.dumps({PLUGIN_CONFIG_KEY: [PLUGIN_PACKAGE, "other", PLUGIN_PACKAGE]}),
+            encoding="utf-8",
+        )
+        result = self.installer.install(mode="npm")
+        self.assertTrue(result["changed"])
+        document = json.loads(config.read_text(encoding="utf-8"))
+        self.assertEqual(document[PLUGIN_CONFIG_KEY], [PLUGIN_PACKAGE, "other"])
 
     def test_uninstall_leaves_valid_json(self) -> None:
         config = self.installer.config_file()
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(
-            json.dumps({"plugin": [PLUGIN_PACKAGE, "other-plugin"]}), encoding="utf-8"
+            json.dumps({PLUGIN_CONFIG_KEY: [PLUGIN_PACKAGE, "other-plugin"]}), encoding="utf-8"
         )
         self.installer.uninstall()
         document = json.loads(config.read_text(encoding="utf-8"))
-        self.assertEqual(document["plugin"], ["other-plugin"])
+        self.assertEqual(document[PLUGIN_CONFIG_KEY], ["other-plugin"])
 
-    def test_uninstall_removes_trailing_entry(self) -> None:
+    def test_uninstall_removes_legacy_entry(self) -> None:
         config = self.installer.config_file()
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(
-            json.dumps({"plugin": ["other-plugin", PLUGIN_PACKAGE]}), encoding="utf-8"
+            json.dumps({LEGACY_PLUGIN_CONFIG_KEY: ["other-plugin", PLUGIN_PACKAGE]}),
+            encoding="utf-8",
         )
         self.installer.uninstall()
         document = json.loads(config.read_text(encoding="utf-8"))
-        self.assertEqual(document["plugin"], ["other-plugin"])
+        self.assertEqual(document[LEGACY_PLUGIN_CONFIG_KEY], ["other-plugin"])
 
     def test_npm_install_removes_a_previous_local_copy(self) -> None:
         local = installer_for(self.root, published=False)
@@ -254,12 +326,19 @@ class NpmInstallTest(unittest.TestCase):
         self.assertFalse(local.local_installed())
         self.assertTrue(local.npm_installed())
 
-    def test_local_install_removes_a_previous_npm_entry(self) -> None:
+    def test_local_install_removes_previous_entries(self) -> None:
         config = self.installer.config_file()
         config.parent.mkdir(parents=True, exist_ok=True)
-        config.write_text(json.dumps({"plugin": [PLUGIN_PACKAGE]}), encoding="utf-8")
+        config.write_text(
+            json.dumps({
+                LEGACY_PLUGIN_CONFIG_KEY: [PLUGIN_PACKAGE],
+                PLUGIN_CONFIG_KEY: [PLUGIN_PACKAGE],
+            }),
+            encoding="utf-8",
+        )
         self.installer.install(mode="local")
         self.assertFalse(self.installer.npm_installed())
+        self.assertFalse(self.installer.legacy_npm_installed())
         self.assertTrue(self.installer.local_installed())
 
     def test_unknown_mode_is_rejected(self) -> None:

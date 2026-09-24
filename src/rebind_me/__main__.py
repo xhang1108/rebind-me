@@ -3,7 +3,7 @@
 ``python -m rebind_me`` launches the bridge. ``python -m rebind_me tray``
 launches the tray. The tray normally starts at startup from the HKCU ``...\\Run``
 key; the bridge starts from an elevated scheduled task. ``autostart`` manages
-that wiring and ``plugin`` installs the opencode integration.
+that wiring and ``plugin`` installs the OpenCode 2 integration.
 """
 
 from __future__ import annotations

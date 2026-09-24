@@ -4,9 +4,9 @@ A **DualSense** controller remapper for Windows 11. Map any button, stick or
 touchpad input to whatever you want — global keyboard and mouse input, the
 light bar, adaptive triggers. You decide the mapping.
 
-The only thing we special-case is **opencode** and **OpenChamber**: their
+The only thing we special-case is **OpenCode 2** and **OpenChamber 2**: their
 shortcuts and a few special behaviours, above all the **status light** that
-reflects your opencode session state on the controller.
+reflects your OpenCode session state on the controller.
 
 - **Standard library only** — no third-party runtime dependencies.
 - **USB only**, single controller.
@@ -34,11 +34,13 @@ reflects your opencode session state on the controller.
 After that, start / stop / restart from the tray — no further UAC prompts.
 To remove it later, right-click `uninstall.cmd` and run it as administrator.
 
-### Install the opencode plugin
+### Install the OpenCode 2 / OpenChamber 2 plugin
 
-The plugin reports opencode session state to the bridge (controller light) and
-powers the focus-terminal action. Double-click `install-plugin.cmd`, or use the
-tray UI's **Integrations** tab, or run it yourself:
+The plugin reports OpenCode 2 session state to the bridge (controller light)
+and powers the focus-terminal action. It supports OpenCode 2.0.15 or newer,
+which is the runtime required by current OpenChamber 2.x. Double-click
+`install-plugin.cmd`, or use the tray UI's **Integrations** tab, or run it
+yourself:
 
 ```bat
 python -m rebind_me plugin install
@@ -46,10 +48,13 @@ python -m rebind_me plugin status
 python -m rebind_me plugin uninstall
 ```
 
-It adds `rebind-me` to the global opencode config when the package is
-published on npm; otherwise it copies the plugin into
-`~/.config/opencode/plugins/`. Restart opencode afterwards. `uninstall-plugin.cmd`
-removes it again.
+When a V2-compatible package release (`0.2.0` or newer) is published on npm,
+the installer adds `rebind-me` to the OpenCode 2 `plugins` array. Otherwise it
+copies the plugin into `~/.config/opencode/plugins/`, where OpenCode 2 discovers
+it automatically.
+An old OpenCode 1 `plugin` entry is migrated or removed automatically. Reload
+OpenCode 2 / OpenChamber 2 after installation. `uninstall-plugin.cmd` removes
+the integration again.
 
 ### Run without installing (manual / development)
 

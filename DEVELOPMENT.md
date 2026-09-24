@@ -25,12 +25,12 @@ src/rebind_me/
 ├─ keys.py  keycapture.py
 ├─ store.py            # persisted settings + schema
 ├─ autostart.py        # scheduled task + HKCU Run wiring
-├─ opencode_plugin.py  # install / uninstall the opencode plugin
+├─ opencode_plugin.py  # install / uninstall the OpenCode 2 plugin
 ├─ api.py              # HTTP + static
 ├─ tray.py             # notification-area icon
 ├─ winapi/             # ctypes Win32 bindings
 └─ ui/                 # index.html / app.js / model.js / styles.css
-plugin/                # opencode npm package (index.ts / events.mjs / bridge.mjs)
+plugin/                # OpenCode 2 npm package (index.ts / events.mjs / bridge.mjs)
 tests/                 # unittest + node --test
 tools/                 # helpers: bridge_api.py, record_fixture.py, ...
 ```
@@ -42,11 +42,20 @@ encoding) is documented in [PROTOCOL.md](PROTOCOL.md). Recorded input fixtures
 live in `tests/fixtures/dualsense_input/`; see its README for the format and how
 to capture them from a real controller (`tools/record_fixture.py`).
 
-## opencode plugin
+## OpenCode 2 / OpenChamber 2 plugin
 
-The plugin lives in `plugin/` and reports session state to the bridge; its event
-mapping, the `/api/sessions` contract and the focus ordering are implemented in
-`plugin/events.mjs`, `plugin/bridge.mjs` and `src/rebind_me/actions.py`.
+The plugin lives in `plugin/` and is an OpenCode 2 definition with a stable
+`id` and `setup(ctx)` lifecycle. It subscribes to the public event stream with
+`ctx.event.subscribe()` and reports the bridge's `idle`, `working`, `approval`
+or `error` state. The event mapper tracks execution phase plus namespaced
+permission/form request IDs so multiple approval prompts remain visible until
+all of them settle. OpenCode 1 plugin hooks are intentionally not supported.
+
+The V2 event shapes are tested in `tests/plugin.test.mjs`; the installer
+migration from the legacy `plugin` config key to `plugins` is tested in
+`tests/test_opencode_plugin.py`. The local plugin uses a type-only
+`@opencode/plugin` import so the copied source does not need a separate runtime
+package installation. Run `npm ci` in `plugin/` before `npm run typecheck`.
 
 ## Console commands
 

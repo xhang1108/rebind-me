@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Node syntax check
         run: |
@@ -44,7 +44,7 @@ jobs:
       - name: Typecheck plugin
         working-directory: plugin
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run typecheck
 
       - name: Node tests

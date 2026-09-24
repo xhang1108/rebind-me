@@ -1242,8 +1242,8 @@ async function toggleMic() {
   }
 }
 
-// Install / remove the opencode plugin from the UI. The bridge writes the
-// global opencode config (npm entry, or local copy as fallback).
+// Install / remove the OpenCode 2 plugin from the UI. The bridge writes the
+// global OpenCode config (plugins entry, or local copy as fallback).
 async function renderIntegrations() {
   const root = document.getElementById("integrations");
   if (!root) return;
@@ -1258,8 +1258,8 @@ async function renderIntegrations() {
     ? `<span class="badge connected">installed · ${info.mode}</span>`
     : `<span class="badge">not installed</span>`;
   root.innerHTML = `
-    <div class="row"><span class="name">opencode plugin</span>${badge}<span></span><span></span></div>
-    <p class="sub">Package <code>${info.package}</code> — reports session status to the light and drives the focus-terminal action. Installs from npm when published, otherwise copies from this checkout. Restart opencode after installing.</p>
+    <div class="row"><span class="name">OpenCode 2 plugin</span>${badge}<span></span><span></span></div>
+    <p class="sub">Package <code>${info.package}</code> — reports session status to the light and drives the focus-terminal action. Installs from npm when a V2-compatible release is published, otherwise copies from this checkout. Reload OpenCode 2 / OpenChamber 2 after installing.</p>
     <div class="row"><span class="name"></span><button type="button" id="plugin-install" class="secondary">${info.installed ? "Reinstall" : "Install"}</button><button type="button" id="plugin-remove" class="secondary"${info.installed ? "" : " disabled"}>Remove</button><span></span></div>
     <p class="sub">Config: <code>${info.config}</code></p>`;
   root.querySelector("#plugin-install").addEventListener("click", () => pluginAction("install"));
@@ -1270,7 +1270,7 @@ async function pluginAction(action) {
   try {
     const info = await api("/api/plugin", "POST", { action });
     const what = info.action === "install" ? `installed (${info.mode})` : "removed";
-    showMessage(`Plugin ${info.changed ? what : "already up to date"}. Restart opencode.`, "ok");
+    showMessage(`Plugin ${info.changed ? what : "already up to date"}. Reload OpenCode 2 / OpenChamber 2.`, "ok");
   } catch (error) {
     showMessage(error.message, "error");
   }

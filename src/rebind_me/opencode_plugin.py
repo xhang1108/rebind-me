@@ -1,19 +1,17 @@
-"""Install the Rebind Me plugin into the user's opencode configuration.
+"""Install the Rebind Me plugin into an OpenCode 2 configuration.
 
-opencode has two ways to load a plugin, and this covers both:
+OpenCode 2 loads local plugins from ``~/.config/opencode/plugins/`` and reads
+published packages from the ``plugins`` array in the global configuration.
+The installer supports both routes while keeping them mutually exclusive:
 
-* **npm** (preferred, once published): put ``rebind-me`` in the
-  ``plugin`` array of the global ``opencode.json`` / ``opencode.jsonc``. opencode
-  downloads it with Bun on the next start.
-* **local** (fallback, and the only option while the package is unpublished):
-  copy the plugin into ``~/.config/opencode/plugins/``. opencode auto-loads every
-  ``*.ts`` / ``*.js`` file directly inside that directory, so the entry is
-  written as ``rebind-me.ts``; its ``.mjs`` helpers are imported, and are never
-  scanned as plugins themselves.
+* **npm** (preferred, once a V2-compatible release is published): put
+  ``rebind-me`` in ``plugins``.
+* **local** (the current development route): copy the plugin entry and its
+  helpers into ``~/.config/opencode/plugins/``.
 
-Nothing here touches the filesystem or the network at import time: every path,
-the registry check and the "is it published" decision are injectable, so the
-whole flow is unit-tested without a config directory or a live registry.
+A legacy OpenCode 1 ``plugin`` entry is migrated or removed when the installer
+runs. Nothing here touches the filesystem or network at import time: paths,
+the registry probe, and the publication decision are injectable for tests.
 """
 
 from __future__ import annotations
@@ -27,10 +25,13 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 PLUGIN_PACKAGE = "rebind-me"
+PLUGIN_CONFIG_KEY = "plugins"
+LEGACY_PLUGIN_CONFIG_KEY = "plugin"
+MIN_OPENCODE_VERSION = "2.0.15"
 
 # Name written into the opencode plugins directory (auto-discovered) and the
 # namespaced helpers it imports. The helpers keep the generic repo filenames out
-# of the shared directory and are `.mjs`, so opencode never loads them directly.
+# of the shared directory and are ``.mjs``, so opencode never loads them.
 ENTRY_NAME = "rebind-me.ts"
 EVENTS_NAME = "rebind-me-events.mjs"
 BRIDGE_NAME = "rebind-me-bridge.mjs"
@@ -47,7 +48,11 @@ IMPORT_REWRITES = {
 }
 
 REGISTRY_URL = "https://registry.npmjs.org/rebind-me"
-RESTART_HINT = "Restart opencode for the plugin to load."
+# Do not select an older published package that still contains the V1 plugin
+# shape. The local checkout remains the safe development route until a matching
+# OpenCode 2 release is published.
+MIN_PUBLISHED_PLUGIN_VERSION = "0.2.0"
+RESTART_HINT = "Reload OpenCode 2 / OpenChamber 2 to load the plugin."
 
 
 def repo_plugin_dir(env: Mapping[str, str] | None = None) -> Path:
@@ -60,31 +65,137 @@ def repo_plugin_dir(env: Mapping[str, str] | None = None) -> Path:
 
 
 def config_dir(env: Mapping[str, str] | None = None) -> Path:
-    """opencode's global config directory (``~/.config/opencode``)."""
+    """OpenCode's global config directory.
+
+    OpenCode 2 accepts an explicit ``OPENCODE_CONFIG_DIR``; honor it before
+    falling back to the platform's XDG-style location.
+    """
     env = os.environ if env is None else env
+    override = (env.get("OPENCODE_CONFIG_DIR") or "").strip()
+    if override:
+        return Path(override)
     base = (env.get("XDG_CONFIG_HOME") or "").strip()
     root = Path(base) if base else Path.home() / ".config"
     return root / "opencode"
 
 
+def _version_at_least(version: object, minimum: str) -> bool:
+    """Compare the simple numeric SemVer form used by npm package releases."""
+    if not isinstance(version, str):
+        return False
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$", version.strip())
+    required = re.match(r"^(\d+)\.(\d+)\.(\d+)$", minimum)
+    if not match or not required:
+        return False
+    current = tuple(int(part) for part in match.groups())
+    floor = tuple(int(part) for part in required.groups())
+    return current >= floor
+
+
 def npm_published(
     timeout: float = 1.5, urlopen_func: Callable[..., object] | None = None
 ) -> bool:
-    """Best-effort check that ``PLUGIN_PACKAGE`` exists on the npm registry."""
+    """Return whether npm has a release new enough for the V2 installer.
+
+    A package can exist under the same name while its latest release still be
+    the old V1 plugin. Treat that as unpublished for this installer and fall
+    back to the local copy. Small injected response objects used by callers that
+    predate the metadata check remain supported; a real HTTP response is parsed.
+    """
     opener = urlopen_func or urllib.request.urlopen
     try:
         with opener(REGISTRY_URL, timeout=timeout) as response:
-            return int(getattr(response, "status", 200)) == 200
+            if int(getattr(response, "status", 200)) != 200:
+                return False
+            read = getattr(response, "read", None)
+            if not callable(read):
+                return True
+            payload = read()
+            if isinstance(payload, bytes):
+                payload = payload.decode("utf-8")
+            metadata = json.loads(payload)
+            latest = metadata.get("dist-tags", {}).get("latest")
+            if latest is None:
+                latest = metadata.get("version")
+            return _version_at_least(latest, MIN_PUBLISHED_PLUGIN_VERSION)
     except Exception:  # noqa: BLE001 - offline, missing, or blocked all mean "no"
         return False
 
 
+def _array_pattern(key: str) -> re.Pattern[str]:
+    return re.compile(rf'"{re.escape(key)}"\s*:\s*\[(.*?)\]', re.DOTALL)
+
+
 def _plugin_array_pattern() -> re.Pattern[str]:
-    return re.compile(r'"plugin"\s*:\s*\[(.*?)\]', re.DOTALL)
+    """Return the active OpenCode 2 plugin-array matcher."""
+    return _array_pattern(PLUGIN_CONFIG_KEY)
+
+
+def _array_entry_count(text: str, key: str, package: str) -> int:
+    match = _array_pattern(key).search(text)
+    if not match:
+        return 0
+    return len(
+        re.findall(
+            rf'"{re.escape(package)}"(?=\s*(?:,|$))',
+            match.group(1),
+        )
+    )
+
+
+def _array_contains(text: str, key: str, package: str) -> bool:
+    return _array_entry_count(text, key, package) > 0
+
+
+def _remove_array_entry(text: str, key: str, package: str) -> tuple[str, bool]:
+    match = _array_pattern(key).search(text)
+    if not match:
+        return text, False
+
+    content = match.group(1)
+    quoted = re.escape(f'"{package}"')
+    removed = False
+    while True:
+        for pattern in (
+            rf"\s*,\s*{quoted}",
+            rf"{quoted}\s*,",
+            quoted,
+        ):
+            updated, count = re.subn(pattern, "", content, count=1)
+            if count:
+                content = updated
+                removed = True
+                break
+        else:
+            break
+
+    if not removed:
+        return text, False
+
+    return text[: match.start(1)] + content + text[match.end(1) :], True
+
+
+def _insert_array_entry(text: str, key: str, package: str) -> str:
+    match = _array_pattern(key).search(text)
+    entry = f'"{package}"'
+    if not match:
+        brace = text.find("{")
+        if brace < 0:
+            raise ValueError("OpenCode config does not contain a JSON object")
+        return text[: brace + 1] + f'\n  "{key}": [{entry}],' + text[brace + 1 :]
+
+    content = match.group(1)
+    if not content.strip():
+        insertion = f"\n    {entry}"
+    elif content[:1].isspace():
+        insertion = f"\n    {entry},"
+    else:
+        insertion = f"\n    {entry},\n    "
+    return text[: match.start(1)] + insertion + text[match.start(1) :]
 
 
 class OpenCodePluginInstaller:
-    """Install, remove or inspect the plugin in the global opencode config."""
+    """Install, remove or inspect the plugin in the global OpenCode config."""
 
     def __init__(
         self,
@@ -117,26 +228,34 @@ class OpenCodePluginInstaller:
         return all(path.is_file() for path in self.local_files().values())
 
     def npm_installed(self) -> bool:
-        text = self._read_config()
-        match = _plugin_array_pattern().search(text)
-        if match:
-            return PLUGIN_PACKAGE in match.group(1)
-        return False
+        return _array_contains(self._read_config(), PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE)
+
+    def legacy_npm_installed(self) -> bool:
+        return _array_contains(
+            self._read_config(), LEGACY_PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE
+        )
 
     def installed(self) -> bool:
-        return self.npm_installed() or self.local_installed()
+        return self.npm_installed() or self.legacy_npm_installed() or self.local_installed()
 
     def status(self) -> dict:
-        mode = None
+        legacy = self.legacy_npm_installed()
         if self.npm_installed():
             mode = "npm"
         elif self.local_installed():
             mode = "local"
+        elif legacy:
+            mode = "legacy"
+        else:
+            mode = None
         return {
             "installed": mode is not None,
             "mode": mode,
             "package": PLUGIN_PACKAGE,
             "config": str(self.config_file()),
+            "configKey": PLUGIN_CONFIG_KEY,
+            "minimumOpenCodeVersion": MIN_OPENCODE_VERSION,
+            "legacyEntry": legacy,
             "pluginsDir": str(self.plugins_dir),
             "source": str(self.source_dir),
             "restartHint": RESTART_HINT,
@@ -150,8 +269,8 @@ class OpenCodePluginInstaller:
         """
         if mode is None:
             mode = "npm" if self._published() else "local"
-        # Exactly one route at a time: opencode would load a local copy and the
-        # npm package as two separate plugins and fire every hook twice.
+        # Exactly one route at a time: OpenCode would load a local copy and
+        # the npm package as two separate plugins and report every event twice.
         if mode == "npm":
             changed = self._write_npm_entry()
             changed = self._delete_local_files() or changed
@@ -163,7 +282,7 @@ class OpenCodePluginInstaller:
         return dict(self.status(), action="install", changed=changed, restartHint=RESTART_HINT)
 
     def uninstall(self) -> dict:
-        """Remove both the npm entry and any local files (both are idempotent)."""
+        """Remove both npm entries and any local files (both are idempotent)."""
         changed = self._remove_npm_entry()
         changed = self._delete_local_files() or changed
         return dict(self.status(), action="uninstall", changed=changed, restartHint=RESTART_HINT)
@@ -179,25 +298,30 @@ class OpenCodePluginInstaller:
     def _write_npm_entry(self) -> bool:
         path = self.config_file()
         text = self._read_config()
-        if self.npm_installed():
-            return False
+        text, legacy_removed = _remove_array_entry(
+            text, LEGACY_PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE
+        )
+
+        active_count = _array_entry_count(text, PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE)
+        if active_count > 1:
+            text, _ = _remove_array_entry(text, PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE)
+            text = _insert_array_entry(text, PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            return True
+
+        if active_count == 1:
+            if not legacy_removed:
+                return False
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            return True
+
         if not text.strip():
-            text = f'{{\n  "plugin": ["{PLUGIN_PACKAGE}"]\n}}\n'
+            text = f'{{\n  "{PLUGIN_CONFIG_KEY}": ["{PLUGIN_PACKAGE}"]\n}}\n'
         else:
-            array = _plugin_array_pattern().search(text)
-            entry = f'"{PLUGIN_PACKAGE}"'
-            if array:
-                existing = array.group(1)
-                if existing.strip():
-                    separator = "" if existing[:1].isspace() else "\n    "
-                    inserted = f"\n    {entry},{separator}"
-                else:
-                    inserted = f"\n    {entry}"
-                text = text[: array.start(1)] + inserted + text[array.start(1) :]
-            else:
-                brace = text.find("{")
-                insertion = f'\n  "plugin": [{entry}],'
-                text = text[: brace + 1] + insertion + text[brace + 1 :]
+            text = _insert_array_entry(text, PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE)
+
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         return True
@@ -205,16 +329,17 @@ class OpenCodePluginInstaller:
     def _remove_npm_entry(self) -> bool:
         path = self.config_file()
         text = self._read_config()
-        if PLUGIN_PACKAGE not in text:
-            return False
-        quoted = re.escape(f'"{PLUGIN_PACKAGE}"')
-        for pattern in (rf"\s*,\s*{quoted}", rf"{quoted}\s*,", quoted):
-            removed, count = re.subn(pattern, "", text, count=1)
-            if count:
-                text = removed
-                break
-        path.write_text(text, encoding="utf-8")
-        return True
+        text, active_removed = _remove_array_entry(
+            text, PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE
+        )
+        text, legacy_removed = _remove_array_entry(
+            text, LEGACY_PLUGIN_CONFIG_KEY, PLUGIN_PACKAGE
+        )
+        changed = active_removed or legacy_removed
+        if changed:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        return changed
 
     # -- local route ------------------------------------------------------
     def _entry_source(self) -> str:
@@ -279,7 +404,11 @@ __all__ = [
     "ENTRY_NAME",
     "EVENTS_NAME",
     "IMPORT_REWRITES",
+    "LEGACY_PLUGIN_CONFIG_KEY",
+    "MIN_OPENCODE_VERSION",
+    "MIN_PUBLISHED_PLUGIN_VERSION",
     "OpenCodePluginInstaller",
+    "PLUGIN_CONFIG_KEY",
     "PLUGIN_PACKAGE",
     "RESTART_HINT",
     "config_dir",

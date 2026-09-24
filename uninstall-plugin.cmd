@@ -1,8 +1,8 @@
 @echo off
-rem Remove the Rebind Me plugin from opencode. No elevation needed.
+rem Remove the Rebind Me plugin from OpenCode 2 / OpenChamber 2. No elevation needed.
 rem
 rem Deletes the local copy in ~/.config/opencode/plugins/ and drops the
-rem rebind-me entry from the opencode config. Restart opencode after.
+rem rebind-me entry from the OpenCode config. Reload OpenCode 2 / OpenChamber 2 after.
 setlocal EnableExtensions
 
 set "SCRIPT_DIR=%~dp0"
@@ -21,5 +21,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo Restart opencode to apply.
+echo Reload OpenCode 2 / OpenChamber 2 to apply.
 endlocal

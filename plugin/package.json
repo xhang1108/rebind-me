@@ -1,7 +1,7 @@
 {
   "name": "rebind-me",
-  "version": "0.1.0",
-  "description": "opencode plugin that forwards session events to the Rebind Me bridge",
+  "version": "0.2.0",
+  "description": "OpenCode 2 plugin that forwards session events to the Rebind Me bridge",
   "type": "module",
   "main": "index.ts",
   "files": [
@@ -20,11 +20,12 @@
   },
   "keywords": [
     "opencode",
+    "opencode-2",
     "opencode-plugin",
     "rebind-me"
   ],
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.18.30",
+    "@opencode/plugin": "2.0.15",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
   }

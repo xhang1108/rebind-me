@@ -1,64 +1,65 @@
-// Rebind Me opencode plugin (typed adapter).
+// Rebind Me OpenCode 2 plugin.
 //
-// Forwards session events to the local bridge so the controller light reflects
-// the agent state, and reports terminal identity via POST /api/sessions for
-// the focus-terminal action. Bun runs this TypeScript directly (no build); the
-// testable logic lives in events.mjs and bridge.mjs.
+// Forwards the public OpenCode 2 event stream to the local bridge so the
+// controller light reflects the current agent state. The mapper stays in
+// events.mjs so its state machine can be tested without an OpenCode runtime.
 
-import type { Plugin } from "@opencode-ai/plugin";
+import type { Plugin as PluginApi } from "@opencode/plugin";
 
-import { createEventMapper, permissionAskStatus, questionToolStatus, sessionTitle } from "./events.mjs";
+import { createEventMapper, sessionTitle } from "./events.mjs";
 import { reportSession } from "./bridge.mjs";
 
-const RebindMe: Plugin = async () => {
-  const titles = new Map<string, string>();
-  const mapEvent = createEventMapper();
+const RebindMe = {
+  id: "rebind-me",
 
-  const report = async (sessionID: string, status: string) => {
-    await reportSession({
-      id: sessionID,
-      status,
-      pid: process.pid,
-      title: titles.get(sessionID) ?? "",
-      lastActive: Date.now() / 1000,
-    });
-  };
+  setup(ctx) {
+    const titles = new Map<string, string>();
+    const mapEvent = createEventMapper();
+    const controller = new AbortController();
 
-  return {
-    event: async ({ event }) => {
-      const mapped = mapEvent(event);
-      if (!mapped?.sessionID) return;
+    const report = async (sessionID: string, status: string) => {
+      await reportSession({
+        id: sessionID,
+        status,
+        pid: process.pid,
+        title: titles.get(sessionID) ?? "",
+        lastActive: Date.now() / 1000,
+      });
+    };
 
-      if (mapped.deleted) {
-        titles.delete(mapped.sessionID);
-        await reportSession({
-          id: mapped.sessionID,
-          deleted: true,
-          lastActive: Date.now() / 1000,
-        });
-        return;
+    const consume = async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          const mapped = mapEvent(event);
+          if (!mapped?.sessionID) continue;
+
+          if (mapped.deleted) {
+            titles.delete(mapped.sessionID);
+            await reportSession({
+              id: mapped.sessionID,
+              deleted: true,
+              lastActive: Date.now() / 1000,
+            });
+            continue;
+          }
+
+          const title = sessionTitle(event);
+          if (title) titles.set(mapped.sessionID, title);
+
+          // Title/metadata-only events deliberately do not report an empty
+          // status, because that would erase the current bridge state.
+          if (mapped.status) await report(mapped.sessionID, mapped.status);
+        }
+      } catch {
+        // A disconnected event stream or an aborted subscription must never
+        // become an unhandled rejection that disturbs the coding session.
       }
+    };
 
-      const title = sessionTitle(event);
-      if (title) titles.set(mapped.sessionID, title);
+    void consume();
 
-      if (mapped.status) await report(mapped.sessionID, mapped.status);
-    },
-    // The question tool waits on the user but emits no permission event.
-    "tool.execute.before": async (input) => {
-      const status = questionToolStatus(input.tool, "before");
-      if (status) await report(input.sessionID, status);
-    },
-    "tool.execute.after": async (input) => {
-      const status = questionToolStatus(input.tool, "after");
-      if (status) await report(input.sessionID, status);
-    },
-    // Fires for every permission evaluation; only "ask" is an approval.
-    "permission.ask": async (input, output) => {
-      const status = permissionAskStatus(output.status);
-      if (status) await report(input.sessionID, status);
-    },
-  };
-};
+    return () => controller.abort();
+  },
+} satisfies PluginApi.Plugin;
 
 export default RebindMe;
