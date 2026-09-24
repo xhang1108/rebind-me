@@ -126,11 +126,6 @@ def _array_pattern(key: str) -> re.Pattern[str]:
     return re.compile(rf'"{re.escape(key)}"\s*:\s*\[(.*?)\]', re.DOTALL)
 
 
-def _plugin_array_pattern() -> re.Pattern[str]:
-    """Return the active OpenCode 2 plugin-array matcher."""
-    return _array_pattern(PLUGIN_CONFIG_KEY)
-
-
 def _array_entry_count(text: str, key: str, package: str) -> int:
     match = _array_pattern(key).search(text)
     if not match:
