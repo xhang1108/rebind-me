@@ -69,8 +69,8 @@ MAX_PRESET_NAME = 40
 REPEAT_MIN_MS = 10
 REPEAT_MAX_MS = 2000
 # How the gap between two repeat fires is chosen. "fixed" always waits
-# ``intervalMs``; "random" waits a fresh value inside ``random``'s window on
-# every fire, so the cadence never settles into a detectable rhythm.
+# ``intervalMs``; "random" draws a fresh value inside ``random``'s window on
+# every fire, which spreads the load instead of arriving in a steady burst.
 REPEAT_TIMINGS = ("fixed", "random")
 # The default cadence is deliberately unhurried: one fire, then roughly one per
 # second. Anything mapped to repeat is usually driving something that counts

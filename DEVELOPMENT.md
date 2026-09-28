@@ -35,6 +35,42 @@ tests/                 # unittest + node --test
 tools/                 # helpers: bridge_api.py, record_fixture.py, ...
 ```
 
+## Mapping store schema
+
+`store.py` owns the persisted mapping/settings/preset documents and their
+validators. Three things about it are easy to get wrong.
+
+**`MAPPING_VERSION` is not a migration lever.** `validate_mapping_store()`
+rejects any document whose `version` is not the current constant, and
+`JsonStore.load()` responds to that rejection by writing `DEFAULT_MAPPING_STORE`
+over the user's file. So bumping the constant does not migrate anyone's
+mappings — it silently replaces them and is already on disk by the next start.
+To add a field, make it an **optional key that is absent by default** and is
+validated when present. That is why `random` and `latch` live inside `repeat`
+as presence-based keys rather than as always-written booleans.
+
+**Documents are canonical.** A validator drops optional keys that hold their
+default (`latch: false` is never written), so a mapping that means the same
+thing always has one representation. The editor marks the active preset by
+comparing `mappingSignature()` over the working document against each stored
+preset, so a working document that carried redundant keys would stop matching a
+preset that had been through the validator, and the UI would fail to show it as
+selected.
+
+**Store constants are duplicated in `ui/model.js` on purpose.** The browser
+cannot import Python, so the UI repeats `REPEAT_TIMINGS`, `REPEAT_MIN_MS`,
+`REPEAT_MAX_MS` and the `DEFAULT_REPEAT_*` editor defaults. They drift silently
+otherwise, so `tests/test_ui_contract.py` parses `model.js` and asserts each
+one against `store.py`. If you change one side, change the other and let the
+test tell you.
+
+Repeat timing is drawn per fire through `MappingEngine(random_source=...)`, so
+`tests/test_engine.py` can pin the random window instead of asserting against a
+real `random.random()`. Tick times need margin: `tick()` tests
+`deadline <= now` and a deadline is `now + interval`, and that sum is not always
+exactly representable — `0.1 + 0.05` is `0.15000000000000002`, so a tick at the
+nominal `0.15` does **not** fire. Assert a little past the boundary.
+
 ## Protocol and fixtures
 
 The DualSense USB HID wire format (input/output offsets, bit fields, trigger
