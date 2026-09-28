@@ -146,6 +146,139 @@ class MappingValidationTest(unittest.TestCase):
         with self.assertRaises(RebindError):
             validate_mapping_store(document)
 
+    def test_repeat_random_window_is_kept(self) -> None:
+        document = mapping_doc_with(
+            mappings={
+                "circle": {
+                    "mode": "repeat",
+                    "sequence": [["Delete"]],
+                    "repeat": {
+                        "delayMs": 300,
+                        "intervalMs": 50,
+                        "random": {"minMs": 40, "maxMs": 80},
+                    },
+                }
+            }
+        )
+        repeat = validate_mapping_store(document)["mappings"]["circle"]["repeat"]
+        self.assertEqual(repeat["random"], {"minMs": 40, "maxMs": 80})
+        # intervalMs survives so switching back to fixed keeps the typed value.
+        self.assertEqual(repeat["intervalMs"], 50)
+
+    def test_repeat_without_random_stays_fixed(self) -> None:
+        document = mapping_doc_with(
+            mappings={
+                "circle": {
+                    "mode": "repeat",
+                    "sequence": [["Delete"]],
+                    "repeat": {"delayMs": 300, "intervalMs": 50},
+                }
+            }
+        )
+        repeat = validate_mapping_store(document)["mappings"]["circle"]["repeat"]
+        self.assertEqual(repeat, {"delayMs": 300, "intervalMs": 50})
+
+    def test_repeat_latch_is_opt_in(self) -> None:
+        document = mapping_doc_with(
+            mappings={
+                "r2": {
+                    "mode": "repeat",
+                    "sequence": [["ShiftLeft", "Enter"]],
+                    "repeat": {"delayMs": 300, "intervalMs": 50, "latch": True},
+                }
+            }
+        )
+        repeat = validate_mapping_store(document)["mappings"]["r2"]["repeat"]
+        self.assertTrue(repeat["latch"])
+        self.assertEqual(repeat["intervalMs"], 50)
+
+    def test_repeat_latch_false_is_dropped(self) -> None:
+        # Storing the key at all would change the mapping signature and make
+        # preset comparisons noisy, so "off" has to normalise away.
+        document = mapping_doc_with(
+            mappings={
+                "r2": {
+                    "mode": "repeat",
+                    "sequence": [["ShiftLeft"]],
+                    "repeat": {"delayMs": 300, "intervalMs": 50, "latch": False},
+                }
+            }
+        )
+        repeat = validate_mapping_store(document)["mappings"]["r2"]["repeat"]
+        self.assertEqual(repeat, {"delayMs": 300, "intervalMs": 50})
+
+    def test_repeat_latch_combines_with_random(self) -> None:
+        document = mapping_doc_with(
+            mappings={
+                "r2": {
+                    "mode": "repeat",
+                    "mouse": "MouseLeft",
+                    "repeat": {
+                        "delayMs": 300,
+                        "intervalMs": 50,
+                        "latch": True,
+                        "random": {"minMs": 40, "maxMs": 80},
+                    },
+                }
+            }
+        )
+        repeat = validate_mapping_store(document)["mappings"]["r2"]["repeat"]
+        self.assertTrue(repeat["latch"])
+        self.assertEqual(repeat["random"], {"minMs": 40, "maxMs": 80})
+
+    def test_mouse_mapping_can_repeat(self) -> None:
+        document = mapping_doc_with(
+            mappings={
+                "cross": {
+                    "mode": "repeat",
+                    "mouse": "MouseLeft",
+                    "repeat": {
+                        "delayMs": 300,
+                        "intervalMs": 50,
+                        "random": {"minMs": 40, "maxMs": 80},
+                    },
+                }
+            }
+        )
+        result = validate_mapping_store(document)["mappings"]["cross"]
+        self.assertEqual(result["mouse"], "MouseLeft")
+        self.assertEqual(result["repeat"]["random"], {"minMs": 40, "maxMs": 80})
+
+    def test_repeat_random_bounds(self) -> None:
+        for window in ({"minMs": 5, "maxMs": 80}, {"minMs": 40, "maxMs": 5000}):
+            document = mapping_doc_with(
+                mappings={
+                    "circle": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": {
+                            "delayMs": 300,
+                            "intervalMs": 50,
+                            "random": window,
+                        },
+                    }
+                }
+            )
+            with self.assertRaises(RebindError):
+                validate_mapping_store(document)
+
+    def test_repeat_random_must_not_be_inverted(self) -> None:
+        document = mapping_doc_with(
+            mappings={
+                "circle": {
+                    "mode": "repeat",
+                    "sequence": [["Delete"]],
+                    "repeat": {
+                        "delayMs": 300,
+                        "intervalMs": 50,
+                        "random": {"minMs": 200, "maxMs": 100},
+                    },
+                }
+            }
+        )
+        with self.assertRaises(RebindError):
+            validate_mapping_store(document)
+
     def test_toggle_initial(self) -> None:
         document = mapping_doc_with(
             mappings={

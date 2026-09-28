@@ -174,6 +174,199 @@ class EngineTest(unittest.TestCase):
         self.engine.tick(1.0)
         self.assertEqual(self.output.events, [("down", "Delete"), ("up", "Delete")])
 
+    def test_mouse_mapping_repeats(self) -> None:
+        self.engine.load(
+            document(
+                {
+                    "cross": {
+                        "mode": "repeat",
+                        "mouse": "MouseLeft",
+                        "repeat": {"delayMs": 100, "intervalMs": 50},
+                    }
+                }
+            )
+        )
+        self.engine.press("cross", 0.0)
+        self.assertEqual(self.output.events, [("down", "MouseLeft"), ("up", "MouseLeft")])
+        self.engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 4)
+        self.engine.tick(0.151)
+        self.assertEqual(len(self.output.events), 6)
+        self.engine.release("cross", 0.16)
+        self.engine.tick(0.5)
+        self.assertEqual(len(self.output.events), 6)
+
+    def test_latched_repeat_keeps_going_after_release(self) -> None:
+        # A two-key segment, so every emit is two key_down plus two key_up.
+        self.engine.load(
+            document(
+                {
+                    "r2": {
+                        "mode": "repeat",
+                        "sequence": [["ShiftLeft", "Enter"]],
+                        "repeat": {"delayMs": 100, "intervalMs": 50, "latch": True},
+                    }
+                }
+            )
+        )
+        self.engine.press("r2", 0.0)
+        self.engine.release("r2", 0.02)
+        self.assertEqual(len(self.output.events), 4)
+        # Long after a held repeat would have stopped, it is still going.
+        self.engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 8)
+        self.engine.tick(0.151)
+        self.assertEqual(len(self.output.events), 12)
+        self.engine.tick(0.201)
+        self.assertEqual(len(self.output.events), 16)
+
+    def test_latched_repeat_stops_on_the_second_press(self) -> None:
+        self.engine.load(
+            document(
+                {
+                    "r2": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": {"delayMs": 100, "intervalMs": 50, "latch": True},
+                    }
+                }
+            )
+        )
+        self.engine.press("r2", 0.0)
+        self.engine.release("r2", 0.02)
+        self.engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 4)
+        # The second press cancels the pending timer: no new click is emitted.
+        self.engine.press("r2", 0.12)
+        self.engine.release("r2", 0.14)
+        self.assertEqual(len(self.output.events), 4)
+        self.engine.tick(1.0)
+        self.assertEqual(len(self.output.events), 4)
+
+    def test_latched_repeat_is_cleared_by_release_all(self) -> None:
+        # Otherwise disabling and re-enabling would leave the flag on with no
+        # pending timer, and the next press would only stop it.
+        self.engine.load(
+            document(
+                {
+                    "r2": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": {"delayMs": 100, "intervalMs": 50, "latch": True},
+                    }
+                }
+            )
+        )
+        self.engine.press("r2", 0.0)
+        self.engine.release("r2", 0.02)
+        self.engine.set_enabled(False)
+        self.engine.set_enabled(True)
+        self.engine.tick(1.0)
+        self.assertEqual(len(self.output.events), 2)
+        # The latch is off, so a fresh press starts a new repeat rather than
+        # being swallowed as a stop.
+        self.engine.press("r2", 2.0)
+        self.assertEqual(len(self.output.events), 4)
+        self.engine.release("r2", 2.02)
+        self.engine.tick(2.1)
+        self.assertEqual(len(self.output.events), 6)
+
+    def test_repeat_without_latch_still_stops_on_release(self) -> None:
+        self.engine.load(
+            document(
+                {
+                    "circle": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": {"delayMs": 100, "intervalMs": 50},
+                    }
+                }
+            )
+        )
+        self.engine.press("circle", 0.0)
+        self.engine.release("circle", 0.02)
+        self.engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 2)
+        self.engine.tick(1.0)
+        self.assertEqual(len(self.output.events), 2)
+
+    def test_repeat_random_window_picks_a_fresh_gap_each_fire(self) -> None:
+        # Drawn gaps: low bound (40ms), midpoint (60ms), near high (~79.6ms),
+        # a quarter of the way back in (50ms), then the low bound again. Every
+        # fire spends one draw on the gap that follows it.
+        draws = iter([0.0, 0.5, 0.99, 0.25, 0.0])
+        engine = MappingEngine(
+            self.output, chord_delay_ms=80, random_source=lambda: next(draws)
+        )
+        engine.load(
+            document(
+                {
+                    "cross": {
+                        "mode": "repeat",
+                        "mouse": "MouseLeft",
+                        "repeat": {
+                            "delayMs": 100,
+                            "intervalMs": 50,
+                            "random": {"minMs": 40, "maxMs": 80},
+                        },
+                    }
+                }
+            )
+        )
+        engine.press("cross", 0.0)
+        # The press fires straight away; the first repeat waits out delayMs.
+        self.assertEqual(len(self.output.events), 2)
+        engine.tick(0.09)
+        self.assertEqual(len(self.output.events), 2)
+        engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 4)
+        # First drawn gap is the low bound: 40ms, not the fixed 50ms.
+        engine.tick(0.13)
+        self.assertEqual(len(self.output.events), 4)
+        engine.tick(0.15)
+        self.assertEqual(len(self.output.events), 6)
+        # Second drawn gap is the midpoint: 60ms.
+        engine.tick(0.19)
+        self.assertEqual(len(self.output.events), 6)
+        engine.tick(0.21)
+        self.assertEqual(len(self.output.events), 8)
+        # Third drawn gap is near the high bound: ~79.6ms.
+        engine.tick(0.27)
+        self.assertEqual(len(self.output.events), 8)
+        engine.tick(0.29)
+        self.assertEqual(len(self.output.events), 10)
+        # Fourth drawn gap is 50ms again, so nothing fires at 0.33.
+        engine.tick(0.33)
+        self.assertEqual(len(self.output.events), 10)
+        engine.tick(0.35)
+        self.assertEqual(len(self.output.events), 12)
+
+    def test_repeat_random_window_never_exceeds_max(self) -> None:
+        # A source that returns 1.0 must not push a gap past the window.
+        engine = MappingEngine(self.output, random_source=lambda: 1.0)
+        engine.load(
+            document(
+                {
+                    "cross": {
+                        "mode": "repeat",
+                        "mouse": "MouseLeft",
+                        "repeat": {
+                            "delayMs": 100,
+                            "intervalMs": 50,
+                            "random": {"minMs": 40, "maxMs": 80},
+                        },
+                    }
+                }
+            )
+        )
+        engine.press("cross", 0.0)
+        engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 4)
+        engine.tick(0.179)
+        self.assertEqual(len(self.output.events), 4)
+        engine.tick(0.181)
+        self.assertEqual(len(self.output.events), 6)
+
     def test_action_dispatch(self) -> None:
         calls: list[tuple] = []
         engine = MappingEngine(

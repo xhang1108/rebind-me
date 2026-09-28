@@ -51,6 +51,34 @@ class ModelContractTest(unittest.TestCase):
     def test_mapping_modes_match_store(self) -> None:
         self.assertEqual(_array(self.model, "MODES"), list(store.MAPPING_MODES))
 
+    def test_repeat_constants_match_store(self) -> None:
+        self.assertEqual(_array(self.model, "REPEAT_TIMINGS"), list(store.REPEAT_TIMINGS))
+        self.assertEqual(_number(self.model, "REPEAT_MIN_MS"), store.REPEAT_MIN_MS)
+        self.assertEqual(_number(self.model, "REPEAT_MAX_MS"), store.REPEAT_MAX_MS)
+
+    def test_repeat_defaults_match_store(self) -> None:
+        # The editor must open on the same cadence the store falls back to,
+        # or a mapping saved from a fresh editor would differ from one that
+        # never had its repeat block written.
+        self.assertEqual(
+            _number(self.model, "DEFAULT_REPEAT_DELAY_MS"), store.DEFAULT_REPEAT["delayMs"]
+        )
+        self.assertEqual(
+            _number(self.model, "DEFAULT_REPEAT_INTERVAL_MS"),
+            store.DEFAULT_REPEAT["intervalMs"],
+        )
+
+    def test_repeat_default_window_sits_inside_the_limits(self) -> None:
+        low = _number(self.model, "DEFAULT_REPEAT_MIN_MS")
+        high = _number(self.model, "DEFAULT_REPEAT_MAX_MS")
+        self.assertLessEqual(store.REPEAT_MIN_MS, low)
+        self.assertLessEqual(high, store.REPEAT_MAX_MS)
+        self.assertLess(low, high)
+        # The window has to bracket the fixed default, or picking "random" in
+        # the editor would silently change the cadence.
+        self.assertLessEqual(low, store.DEFAULT_REPEAT["intervalMs"])
+        self.assertLessEqual(store.DEFAULT_REPEAT["intervalMs"], high)
+
     def test_actions_match_store(self) -> None:
         self.assertEqual(_array(self.model, "ACTIONS"), list(store.ACTIONS))
 

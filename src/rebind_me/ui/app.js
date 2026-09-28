@@ -1,6 +1,8 @@
 import {
-  ACTIONS, EFFECTS, INPUT_GROUPS, MAX_CHORD_SEGMENTS, MODES, MOUSE_CODES, SCROLL_CODES,
-  STATUS_STATES, TOUCHPAD_ZONE_INPUTS,
+  ACTIONS, DEFAULT_REPEAT_DELAY_MS, DEFAULT_REPEAT_INTERVAL_MS, DEFAULT_REPEAT_MAX_MS,
+  DEFAULT_REPEAT_MIN_MS, EFFECTS, INPUT_GROUPS, MAX_CHORD_SEGMENTS, MODES, MOUSE_CODES,
+  REPEAT_MAX_MS, REPEAT_MIN_MS, REPEAT_TIMINGS, SCROLL_CODES, STATUS_STATES,
+  TOUCHPAD_ZONE_INPUTS,
   clamp, formatSequence, hexToRgb, mappingEntryFromForm, mappingFormFromEntry,
   mappingSignature, mappingSummary, parseSequence, removeSegment, rgbToHex, setSegment, stickOffset,
 } from "./model.js";
@@ -642,7 +644,7 @@ function renderEditor() {
   const entry = working.mappings[selected];
   let form;
   if (action) {
-    form = { kind: "action", mode: "single", sequenceText: "", mouse: MOUSE_CODES[0], scroll: SCROLL_CODES[0], repeatDelay: 300, repeatInterval: 50, toggleInitial: "off" };
+    form = { kind: "action", mode: "single", sequenceText: "", mouse: MOUSE_CODES[0], scroll: SCROLL_CODES[0], repeatDelay: DEFAULT_REPEAT_DELAY_MS, repeatInterval: DEFAULT_REPEAT_INTERVAL_MS, repeatTiming: "fixed", repeatMin: DEFAULT_REPEAT_MIN_MS, repeatMax: DEFAULT_REPEAT_MAX_MS, repeatLatch: false, toggleInitial: "off" };
     form.action = action.action;
     form.process = (action.params || {}).process || "";
   } else {
@@ -681,8 +683,17 @@ function renderEditor() {
       <label>Process <input id="ed-process" name="process" data-role="process" placeholder="process.exe" value="${form.process}" /></label>
     </div>
     <div class="line" data-role="repeat-wrap">
-      <label>Delay ms <input id="ed-repeatDelay" name="repeatDelay" type="number" min="10" max="2000" data-role="repeatDelay" value="${form.repeatDelay}" /></label>
-      <label>Interval ms <input id="ed-repeatInterval" name="repeatInterval" type="number" min="10" max="2000" data-role="repeatInterval" value="${form.repeatInterval}" /></label>
+      <label>Delay ms <input id="ed-repeatDelay" name="repeatDelay" type="number" min="${REPEAT_MIN_MS}" max="${REPEAT_MAX_MS}" data-role="repeatDelay" value="${form.repeatDelay}" /></label>
+      <label>Timing <select id="ed-repeatTiming" name="repeatTiming" data-role="repeatTiming">${options(REPEAT_TIMINGS, form.repeatTiming)}</select></label>
+      <span data-role="repeat-fixed-wrap" class="inline">Every ms <input id="ed-repeatInterval" name="repeatInterval" type="number" min="${REPEAT_MIN_MS}" max="${REPEAT_MAX_MS}" data-role="repeatInterval" value="${form.repeatInterval}" /></span>
+      <span data-role="repeat-random-wrap" class="inline">Random ms <input id="ed-repeatMin" name="repeatMin" type="number" min="${REPEAT_MIN_MS}" max="${REPEAT_MAX_MS}" data-role="repeatMin" value="${form.repeatMin}" /> to <input id="ed-repeatMax" name="repeatMax" type="number" min="${REPEAT_MIN_MS}" max="${REPEAT_MAX_MS}" data-role="repeatMax" value="${form.repeatMax}" /></span>
+      <span data-role="repeat-latch-wrap" class="inline">
+        <label class="switch">
+          <input id="ed-repeatLatch" name="repeatLatch" type="checkbox" data-role="repeatLatch"${form.repeatLatch ? " checked" : ""} />
+          <span class="switch-ui" aria-hidden="true"></span>
+          <span class="switch-text">keep going after release</span>
+        </label>
+      </span>
     </div>
     <div class="line"><button type="button" id="clear-seq" class="secondary">Clear mapping</button></div>`;
 
@@ -699,7 +710,11 @@ function renderEditor() {
     editor.querySelector('[data-role="action"]').addEventListener("change", () => { syncEditor(); applyEditor(); });
     editor.querySelector('[data-role="process"]').addEventListener("input", applyEditor);
     editor.querySelector('[data-role="repeatDelay"]').addEventListener("input", applyEditor);
+    editor.querySelector('[data-role="repeatTiming"]').addEventListener("change", () => { syncEditor(); applyEditor(); });
     editor.querySelector('[data-role="repeatInterval"]').addEventListener("input", applyEditor);
+    editor.querySelector('[data-role="repeatMin"]').addEventListener("input", applyEditor);
+    editor.querySelector('[data-role="repeatMax"]').addEventListener("input", applyEditor);
+    editor.querySelector('[data-role="repeatLatch"]').addEventListener("change", applyEditor);
     editor.querySelector("#clear-seq").addEventListener("click", () => {
         const input = selected;
         cancelRecording();
@@ -787,19 +802,39 @@ function syncEditor() {
   const multi = type === "sequence" && getChords(editor).length > 1;
   if (multi) modeSelect.value = "single";
   const mode = modeSelect.value;
+  const repeat = type === "sequence" || type === "mouse";
+  const repeatTiming = editor.querySelector('[data-role="repeatTiming"]').value;
   const show = (selector, visible) => { const node = editor.querySelector(selector); if (node) node.classList.toggle("hidden", !visible); };
   show('[data-role="seq-wrap"]', type === "sequence");
   show('[data-role="mouse-wrap"]', type === "mouse");
   show('[data-role="action-wrap"]', type === "action");
-  show('[data-role="repeat-wrap"]', type === "sequence" && mode === "repeat" && !multi);
+  show('[data-role="repeat-wrap"]', repeat && mode === "repeat" && !multi);
+  show('[data-role="repeat-fixed-wrap"]', repeatTiming !== "random");
+  show('[data-role="repeat-random-wrap"]', repeatTiming === "random");
   show('[data-role="toggle-wrap"]', mode === "toggle" && !multi);
   modeSelect.disabled = type === "action" || multi;
+}
+
+// The timing fields the editor renders for every output kind, so a mouse
+// mapping auto-clicks with the same fixed / random choice as a key sequence.
+function editorTimings(editor) {
+  return {
+    repeatDelay: Number(editor.querySelector('[data-role="repeatDelay"]').value),
+    repeatInterval: Number(editor.querySelector('[data-role="repeatInterval"]').value),
+    repeatTiming: editor.querySelector('[data-role="repeatTiming"]').value,
+    repeatMin: Number(editor.querySelector('[data-role="repeatMin"]').value),
+    repeatMax: Number(editor.querySelector('[data-role="repeatMax"]').value),
+    repeatLatch: editor.querySelector('[data-role="repeatLatch"]').checked,
+    toggleInitial: editor.querySelector('[data-role="toggleInitial"]').value,
+  };
 }
 
 function applyEditor() {
   const editor = currentEditor();
   if (!selected || !editor) return;
   const type = editor.querySelector('[data-role="type"]').value;
+  const modeSelect = editor.querySelector('[data-role="mode"]');
+  if (type === "sequence" && getChords(editor).length > 1) modeSelect.value = "single";
   delete working.mappings[selected];
   delete working.actions[selected];
   if (type === "action") {
@@ -808,21 +843,24 @@ function applyEditor() {
     if (action === "switch-to-app") entry.params = { process: editor.querySelector('[data-role="process"]').value.trim() };
     working.actions[selected] = entry;
   } else if (type === "mouse") {
-    const mode = editor.querySelector('[data-role="mode"]').value;
+    // The pointer dropdown mixes mouse buttons and scroll directions, so pick
+    // the kind from the code and let the shared builder attach the timing.
     const pointer = editor.querySelector('[data-role="pointer"]').value;
-    working.mappings[selected] = SCROLL_CODES.includes(pointer)
-      ? { mode, scroll: pointer }
-      : { mode, mouse: pointer };
+    const result = mappingEntryFromForm({
+      kind: SCROLL_CODES.includes(pointer) ? "scroll" : "mouse",
+      mode: modeSelect.value,
+      mouse: pointer,
+      scroll: pointer,
+      sequenceText: "",
+      ...editorTimings(editor),
+    });
+    if (result.entry) working.mappings[selected] = result.entry;
   } else if (type === "sequence") {
-    const modeSelect = editor.querySelector('[data-role="mode"]');
-    if (getChords(editor).length > 1) modeSelect.value = "single";
     const result = mappingEntryFromForm({
       kind: "sequence",
       mode: modeSelect.value,
       sequenceText: editor.querySelector('[data-role="sequence"]').value,
-      repeatDelay: Number(editor.querySelector('[data-role="repeatDelay"]').value),
-      repeatInterval: Number(editor.querySelector('[data-role="repeatInterval"]').value),
-      toggleInitial: editor.querySelector('[data-role="toggleInitial"]').value,
+      ...editorTimings(editor),
     });
     if (result.entry) working.mappings[selected] = result.entry;
   }

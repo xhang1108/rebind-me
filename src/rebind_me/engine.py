@@ -15,13 +15,17 @@ an injected callback.
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
 from .keys import SCROLL_CODES
-from .store import DEFAULT_CHORD_DELAY_MS, STICK_DIRECTIONS
+from .store import DEFAULT_CHORD_DELAY_MS, DEFAULT_REPEAT, STICK_DIRECTIONS
 
 _TimerCallback = Callable[[float], None]
+# Returns a float in [0, 1). Injected so tests can drive a repeat mapping's
+# random cadence without touching the global random module.
+_RandomCallback = Callable[[], float]
 
 STICK_ACTIVATION_THRESHOLD = 0.68
 STICK_RELEASE_THRESHOLD = 0.42
@@ -90,6 +94,7 @@ class _Binding:
     pressed: bool = False
     active: bool = False
     toggle_on: bool = False
+    latched: bool = False
     held_codes: list[str] = field(default_factory=list)
     generation: int = 0
 
@@ -102,10 +107,12 @@ class MappingEngine:
         output: object,
         action_handler: Callable[[str, str, dict], None] | None = None,
         chord_delay_ms: int = DEFAULT_CHORD_DELAY_MS,
+        random_source: _RandomCallback = random.random,
     ):
         self.output = output
         self.action_handler = action_handler
         self.chord_delay = max(0, chord_delay_ms) / 1000.0
+        self._random_source = random_source
         self._bindings: dict[str, _Binding] = {}
         self._actions: dict[str, dict] = {}
         self._pending: list[tuple[float, int, _TimerCallback]] = []
@@ -161,10 +168,18 @@ class MappingEngine:
                 self._activate(binding)
                 binding.toggle_on = True
         elif mode == "repeat":
+            if binding.latched:
+                # A second press stops a latched repeat. The generation bump
+                # above already invalidated the pending timer, so the pending
+                # queue needs no separate cancel path.
+                binding.latched = False
+                return
             # Fire once on press (a quick tap still does something), then keep
-            # repeating while held after delayMs.
+            # repeating after delayMs -- while the button is held, or, for a
+            # latched repeat, until the next press.
             self._emit_once(binding, now)
             self._schedule_repeat(binding, now)
+            binding.latched = self._latches(binding)
 
     def release(self, name: str, now: float) -> None:
         binding = self._bindings.get(name)
@@ -181,6 +196,10 @@ class MappingEngine:
             if binding.active or binding.held_codes:
                 self._deactivate(binding)
             binding.pressed = False
+            # A latched repeat has to be un-latched here as well: leaving the
+            # flag set would survive the disable / re-enable cycle with no
+            # pending timer behind it, and the next press would only stop it.
+            binding.latched = False
         self._pending.clear()
 
     def tick(self, now: float) -> None:
@@ -255,8 +274,29 @@ class MappingEngine:
         binding.held_codes = []
         binding.active = False
 
+    def _latches(self, binding: _Binding) -> bool:
+        """True when this repeat keeps firing after the button is released."""
+        return bool(binding.entry.get("repeat", {}).get("latch"))
+
+    def _next_interval(self, binding: _Binding) -> float:
+        """Seconds to wait before the next repeat fire.
+
+        A mapping with a ``random`` window gets a fresh gap on every fire, so
+        the cadence varies; otherwise the gap is the fixed ``intervalMs``.
+        """
+        repeat = binding.entry.get("repeat", {})
+        window = repeat.get("random")
+        if window:
+            low = window["minMs"]
+            high = window["maxMs"]
+            interval = low + (high - low) * self._random_source()
+        else:
+            interval = repeat.get("intervalMs", DEFAULT_REPEAT["intervalMs"])
+        return interval / 1000.0
+
     def _schedule_repeat(self, binding: _Binding, now: float) -> None:
-        delay = binding.entry.get("repeat", {}).get("delayMs", 300) / 1000.0
+        repeat = binding.entry.get("repeat", {})
+        delay = repeat.get("delayMs", DEFAULT_REPEAT["delayMs"]) / 1000.0
         generation = binding.generation
         self._schedule(
             now + delay,
@@ -264,12 +304,17 @@ class MappingEngine:
         )
 
     def _repeat_fire(self, binding: _Binding, generation: int, now: float) -> None:
-        if not self.enabled or not binding.pressed or generation != binding.generation:
+        # A repeat keeps going while the button is held, and keeps going after
+        # release only when it is latched. The generation check is what lets a
+        # second press cancel a latched repeat: the pending callback still
+        # carries the old generation and drops itself here.
+        if not self.enabled or generation != binding.generation:
+            return
+        if not (binding.pressed or binding.latched):
             return
         self._emit_once(binding, now)
-        interval = binding.entry.get("repeat", {}).get("intervalMs", 50) / 1000.0
         self._schedule(
-            now + interval,
+            now + self._next_interval(binding),
             lambda fired: self._repeat_fire(binding, generation, fired),
         )
 

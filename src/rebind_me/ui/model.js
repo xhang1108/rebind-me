@@ -33,6 +33,17 @@ export const INPUT_GROUPS = [
 ];
 
 export const MODES = ["single", "repeat", "hold", "toggle"];
+// How the gap between two repeat fires is picked. "fixed" always waits
+// intervalMs; "random" waits a fresh value inside the min/max window.
+export const REPEAT_TIMINGS = ["fixed", "random"];
+export const REPEAT_MIN_MS = 10;
+export const REPEAT_MAX_MS = 2000;
+// Mirrors store.DEFAULT_REPEAT plus a +/-20% random window, so the editor
+// opens on the same unhurried cadence the store would fall back to.
+export const DEFAULT_REPEAT_DELAY_MS = 1000;
+export const DEFAULT_REPEAT_INTERVAL_MS = 1000;
+export const DEFAULT_REPEAT_MIN_MS = 800;
+export const DEFAULT_REPEAT_MAX_MS = 1200;
 export const MAX_CHORD_SEGMENTS = 2;
 export const MOUSE_CODES = ["MouseLeft", "MouseRight", "MouseMiddle", "MouseBack", "MouseForward"];
 export const SCROLL_CODES = ["ScrollUp", "ScrollDown", "ScrollLeft", "ScrollRight"];
@@ -74,16 +85,37 @@ export function rgbToHex(rgb) {
 export function mappingEntryFromForm(form) {
   if (form.kind === "none") return { entry: null };
   const mode = form.mode;
-  if (form.kind === "mouse") return { entry: { mode, mouse: form.mouse } };
-  if (form.kind === "scroll") return { entry: { mode, scroll: form.scroll } };
-  const sequence = parseSequence(form.sequenceText);
-  if (sequence.length === 0) return { error: "sequence is empty" };
-  const entry = { mode, sequence };
-  if (mode === "repeat") {
-    entry.repeat = { delayMs: clamp(form.repeatDelay, 10, 2000), intervalMs: clamp(form.repeatInterval, 10, 2000) };
+  const entry = { mode };
+  if (form.kind === "mouse") entry.mouse = form.mouse;
+  else if (form.kind === "scroll") entry.scroll = form.scroll;
+  else {
+    const sequence = parseSequence(form.sequenceText);
+    if (sequence.length === 0) return { error: "sequence is empty" };
+    entry.sequence = sequence;
   }
+  if (mode === "repeat") entry.repeat = repeatFromForm(form);
+
   if (mode === "toggle") entry.toggleInitial = form.toggleInitial === "on" ? "on" : "off";
   return { entry };
+}
+
+// Repeat timings apply to every output kind, so a mouse mapping can auto-click
+// just like a key sequence. The window is ordered here so the editor can never
+// hand the store a minMs larger than maxMs.
+function repeatFromForm(form) {
+  const repeat = {
+    delayMs: clamp(form.repeatDelay, REPEAT_MIN_MS, REPEAT_MAX_MS),
+    intervalMs: clamp(form.repeatInterval, REPEAT_MIN_MS, REPEAT_MAX_MS),
+  };
+  if (form.repeatTiming === "random") {
+    const low = clamp(form.repeatMin, REPEAT_MIN_MS, REPEAT_MAX_MS);
+    const high = clamp(form.repeatMax, REPEAT_MIN_MS, REPEAT_MAX_MS);
+    repeat.random = { minMs: Math.min(low, high), maxMs: Math.max(low, high) };
+  }
+  // Opt-in only: the key is left out entirely when off, so a stored mapping
+  // keeps meaning "repeat while held" without anyone having to set it.
+  if (form.repeatLatch) repeat.latch = true;
+  return repeat;
 }
 
 export function mappingSummary(entry, action) {
@@ -137,14 +169,26 @@ export function removeSegment(sequence, index) {
 export function mappingFormFromEntry(entry) {
   const form = {
     kind: "sequence", mode: "single", sequenceText: "", mouse: MOUSE_CODES[0],
-    scroll: SCROLL_CODES[0], repeatDelay: 300, repeatInterval: 50, toggleInitial: "off",
+    scroll: SCROLL_CODES[0],
+    repeatDelay: DEFAULT_REPEAT_DELAY_MS, repeatInterval: DEFAULT_REPEAT_INTERVAL_MS,
+    repeatTiming: "fixed", repeatMin: DEFAULT_REPEAT_MIN_MS,
+    repeatMax: DEFAULT_REPEAT_MAX_MS, repeatLatch: false, toggleInitial: "off",
   };
   if (!entry) { form.kind = "none"; return form; }
   form.mode = entry.mode || "single";
   if (entry.mouse) { form.kind = "mouse"; form.mouse = entry.mouse; }
   else if (entry.scroll) { form.kind = "scroll"; form.scroll = entry.scroll; }
   else { form.kind = "sequence"; form.sequenceText = formatSequence(entry.sequence); }
-  if (entry.repeat) { form.repeatDelay = entry.repeat.delayMs; form.repeatInterval = entry.repeat.intervalMs; }
+  if (entry.repeat) {
+    form.repeatDelay = entry.repeat.delayMs;
+    form.repeatInterval = entry.repeat.intervalMs;
+    form.repeatLatch = !!entry.repeat.latch;
+    if (entry.repeat.random) {
+      form.repeatTiming = "random";
+      form.repeatMin = entry.repeat.random.minMs;
+      form.repeatMax = entry.repeat.random.maxMs;
+    }
+  }
   if (entry.toggleInitial) form.toggleInitial = entry.toggleInitial;
   return form;
 }

@@ -68,7 +68,15 @@ MAX_PRESETS = 50
 MAX_PRESET_NAME = 40
 REPEAT_MIN_MS = 10
 REPEAT_MAX_MS = 2000
-DEFAULT_REPEAT = {"delayMs": 300, "intervalMs": 50}
+# How the gap between two repeat fires is chosen. "fixed" always waits
+# ``intervalMs``; "random" waits a fresh value inside ``random``'s window on
+# every fire, so the cadence never settles into a detectable rhythm.
+REPEAT_TIMINGS = ("fixed", "random")
+# The default cadence is deliberately unhurried: one fire, then roughly one per
+# second. Anything mapped to repeat is usually driving something that counts
+# requests, so a fast default is more likely to hit a rate limit than to be
+# useful.
+DEFAULT_REPEAT = {"delayMs": 1000, "intervalMs": 1000}
 DEFAULT_CHORD_DELAY_MS = 80
 _EFFECTS = ("static", "breathe", "blink")
 _STATUS_STATES = ("idle", "working", "approval", "error")
@@ -174,7 +182,22 @@ def _validate_sequence(value: object) -> list[list[str]]:
     return segments
 
 
-def _validate_repeat(value: object) -> dict[str, int]:
+def _validate_repeat_window(value: object) -> dict[str, int]:
+    """Validate the optional random gap window of a repeat mapping."""
+    if not isinstance(value, dict):
+        raise _schema("repeat.random must be an object")
+    low = int(value.get("minMs", REPEAT_MIN_MS))
+    high = int(value.get("maxMs", REPEAT_MAX_MS))
+    if not REPEAT_MIN_MS <= low <= REPEAT_MAX_MS:
+        raise _schema(f"repeat.random.minMs must be {REPEAT_MIN_MS}..{REPEAT_MAX_MS}")
+    if not REPEAT_MIN_MS <= high <= REPEAT_MAX_MS:
+        raise _schema(f"repeat.random.maxMs must be {REPEAT_MIN_MS}..{REPEAT_MAX_MS}")
+    if low > high:
+        raise _schema("repeat.random.minMs must not exceed repeat.random.maxMs")
+    return {"minMs": low, "maxMs": high}
+
+
+def _validate_repeat(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise _schema("repeat must be an object")
     delay = int(value.get("delayMs", DEFAULT_REPEAT["delayMs"]))
@@ -183,7 +206,17 @@ def _validate_repeat(value: object) -> dict[str, int]:
         raise _schema(f"repeat.delayMs must be {REPEAT_MIN_MS}..{REPEAT_MAX_MS}")
     if not REPEAT_MIN_MS <= interval <= REPEAT_MAX_MS:
         raise _schema(f"repeat.intervalMs must be {REPEAT_MIN_MS}..{REPEAT_MAX_MS}")
-    return {"delayMs": delay, "intervalMs": interval}
+    result: dict[str, object] = {"delayMs": delay, "intervalMs": interval}
+    # ``intervalMs`` is kept even in random mode so switching back to fixed
+    # timing in the editor does not lose the value the user had typed.
+    if "random" in value:
+        result["random"] = _validate_repeat_window(value["random"])
+    # Latching is opt-in: without the key a repeat follows the button, which is
+    # what every repeat mapping has always done. Storing ``false`` is dropped so
+    # the document stays canonical and preset comparisons stay stable.
+    if value.get("latch"):
+        result["latch"] = True
+    return result
 
 
 def _validate_mapping(entry: object) -> dict:
@@ -565,6 +598,9 @@ __all__ = [
     "MAX_PRESETS",
     "PRESETS_FILENAME",
     "PRESETS_VERSION",
+    "REPEAT_MAX_MS",
+    "REPEAT_MIN_MS",
+    "REPEAT_TIMINGS",
     "RESERVED_INPUTS",
     "SETTINGS_FILENAME",
     "SETTINGS_VERSION",

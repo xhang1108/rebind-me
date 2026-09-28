@@ -68,11 +68,107 @@ test("mapping serialization by mode", () => {
   assert.equal(mappingEntryFromForm({ kind: "none" }).entry, null);
 });
 
+test("repeat timing can be fixed or random", () => {
+  const fixed = mappingEntryFromForm({
+    kind: "sequence", mode: "repeat", sequenceText: "Delete",
+    repeatDelay: 300, repeatInterval: 50, repeatTiming: "fixed",
+    repeatMin: 40, repeatMax: 80,
+  });
+  assert.deepEqual(fixed.entry.repeat, { delayMs: 300, intervalMs: 50 });
+
+  const random = mappingEntryFromForm({
+    kind: "sequence", mode: "repeat", sequenceText: "Delete",
+    repeatDelay: 300, repeatInterval: 50, repeatTiming: "random",
+    repeatMin: 40, repeatMax: 80,
+  });
+  assert.deepEqual(random.entry.repeat, {
+    delayMs: 300, intervalMs: 50, random: { minMs: 40, maxMs: 80 },
+  });
+});
+
+test("a mouse mapping can repeat with a random window", () => {
+  const entry = mappingEntryFromForm({
+    kind: "mouse", mode: "repeat", mouse: "MouseLeft",
+    repeatDelay: 300, repeatInterval: 50, repeatTiming: "random",
+    repeatMin: 40, repeatMax: 80,
+  }).entry;
+  assert.deepEqual(entry, {
+    mode: "repeat", mouse: "MouseLeft",
+    repeat: { delayMs: 300, intervalMs: 50, random: { minMs: 40, maxMs: 80 } },
+  });
+
+  const scroll = mappingEntryFromForm({
+    kind: "scroll", mode: "repeat", scroll: "ScrollUp",
+    repeatDelay: 300, repeatInterval: 50, repeatTiming: "random",
+    repeatMin: 40, repeatMax: 80,
+  }).entry;
+  assert.deepEqual(scroll.repeat.random, { minMs: 40, maxMs: 80 });
+});
+
+test("a repeat can latch so one press keeps it going", () => {
+  const latched = mappingEntryFromForm({
+    kind: "sequence", mode: "repeat", sequenceText: "ShiftLeft,Enter",
+    repeatDelay: 300, repeatInterval: 50, repeatTiming: "random",
+    repeatMin: 40, repeatMax: 80, repeatLatch: true,
+  }).entry;
+  assert.deepEqual(latched.repeat, {
+    delayMs: 300, intervalMs: 50, random: { minMs: 40, maxMs: 80 }, latch: true,
+  });
+
+  // Off is the default, and the key is left out entirely so a stored mapping
+  // keeps meaning "repeat while held".
+  const held = mappingEntryFromForm({
+    kind: "sequence", mode: "repeat", sequenceText: "ShiftLeft,Enter",
+    repeatDelay: 300, repeatInterval: 50, repeatLatch: false,
+  }).entry;
+  assert.equal("latch" in held.repeat, false);
+
+  assert.equal(mappingFormFromEntry(latched).repeatLatch, true);
+  assert.equal(mappingFormFromEntry(held).repeatLatch, false);
+});
+
+test("the random window is clamped and ordered", () => {
+  const inverted = mappingEntryFromForm({
+    kind: "sequence", mode: "repeat", sequenceText: "Delete",
+    repeatDelay: 300, repeatInterval: 50, repeatTiming: "random",
+    repeatMin: 900, repeatMax: 100,
+  });
+  assert.deepEqual(inverted.entry.repeat.random, { minMs: 100, maxMs: 900 });
+
+  const outOfRange = mappingEntryFromForm({
+    kind: "sequence", mode: "repeat", sequenceText: "Delete",
+    repeatDelay: 300, repeatInterval: 50, repeatTiming: "random",
+    repeatMin: 1, repeatMax: 99999,
+  });
+  assert.deepEqual(outOfRange.entry.repeat.random, { minMs: 10, maxMs: 2000 });
+});
+
 test("mapping form round trip", () => {
   const entry = { mode: "single", sequence: [["ControlLeft", "KeyK"], ["KeyL"]] };
   const form = mappingFormFromEntry(entry);
   const rebuilt = mappingEntryFromForm(form);
   assert.deepEqual(rebuilt.entry, entry);
+});
+
+test("a random repeat survives a form round trip", () => {
+  const entry = {
+    mode: "repeat", mouse: "MouseLeft",
+    repeat: { delayMs: 200, intervalMs: 50, random: { minMs: 40, maxMs: 80 } },
+  };
+  const form = mappingFormFromEntry(entry);
+  assert.equal(form.kind, "mouse");
+  assert.equal(form.repeatTiming, "random");
+  assert.equal(form.repeatMin, 40);
+  assert.equal(form.repeatMax, 80);
+  assert.deepEqual(mappingEntryFromForm(form).entry, entry);
+
+  // A fixed repeat comes back as fixed, with no window to leak in.
+  const fixed = mappingFormFromEntry({
+    mode: "repeat", sequence: [["Delete"]],
+    repeat: { delayMs: 200, intervalMs: 50 },
+  });
+  assert.equal(fixed.repeatTiming, "fixed");
+  assert.equal("random" in mappingEntryFromForm(fixed).entry.repeat, false);
 });
 
 test("clamp and colour helpers", () => {
