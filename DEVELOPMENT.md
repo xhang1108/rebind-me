@@ -71,6 +71,31 @@ real `random.random()`. Tick times need margin: `tick()` tests
 exactly representable — `0.1 + 0.05` is `0.15000000000000002`, so a tick at the
 nominal `0.15` does **not** fire. Assert a little past the boundary.
 
+## Latched repeats and window focus
+
+A repeat with `latch` keeps firing after the button is released and has no
+timeout of its own. `MappingEngine.stop_latched()` is the single cancel path;
+`bridge._stop_latched_on_focus_change()` decides when to call it. Three details
+there are deliberate:
+
+**Cancelling is a generation bump.** Clearing `latched` alone would not stop a
+repeat whose button is still physically held, because the guard is
+`pressed or latched`. Bumping the generation makes the pending `_repeat_fire`
+callback drop itself, and nothing reschedules the chain, so a held button stays
+quiet until it is released and pressed again.
+
+**The foreground is only polled while something is latched.** `_on_report` runs
+on every input report, so an unconditional `GetForegroundWindow` would be on the
+hot path for the life of the process. The baseline window is recorded on the
+first poll *after* a latch, not compared against a running last-seen value, so
+the change that happened before the latch cannot be mistaken for one after it.
+
+**A zero hwnd is ignored.** Focus is momentarily unowned while switching or
+while a window is closing. Treating that as "the user left" would stop a repeat
+that is still wanted. The same applies to the config UI taking focus — that is
+itself leaving the app the repeat was driving, which is why the check sits
+outside the `_ui_blocks_input` branch.
+
 ## Protocol and fixtures
 
 The DualSense USB HID wire format (input/output offsets, bit fields, trigger

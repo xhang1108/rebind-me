@@ -202,6 +202,26 @@ class MappingEngine:
             binding.latched = False
         self._pending.clear()
 
+    def latched_inputs(self) -> list[str]:
+        """Names of the repeat mappings that are still firing after release."""
+        return [name for name, b in self._bindings.items() if b.latched]
+
+    def stop_latched(self) -> list[str]:
+        """Cancel every latched repeat, returning the names that were running.
+
+        Bumping the generation is enough to kill the chain: the pending
+        callback still carries the old generation and drops itself in
+        :meth:`_repeat_fire`. A button that is still physically held does not
+        pick the repeat back up on its own, because nothing reschedules the
+        chain -- only a fresh press relatches.
+        """
+        stopped = self.latched_inputs()
+        for name in stopped:
+            binding = self._bindings[name]
+            binding.latched = False
+            binding.generation += 1
+        return stopped
+
     def tick(self, now: float) -> None:
         due = [item for item in self._pending if item[0] <= now]
         if not due:

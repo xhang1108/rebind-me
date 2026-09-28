@@ -103,7 +103,7 @@ never what you want. Scroll suits `single` or `repeat`.
 | **Timing** | `fixed` waits the same gap every time; `random` draws a fresh one on every fire. |
 | **Every ms** | The gap between fires, shown when `Timing` is `fixed`. |
 | **Random ms `X` to `Y`** | The window the gap is drawn from, shown when `Timing` is `random`. |
-| **keep going after release** | Off: repeating stops when you let go. On: one press starts it and it runs until you press the button again. |
+| **keep going after release** | Off: repeating stops when you let go. On: one press starts it and it keeps going until you stop it again. |
 
 Random timing only jitters the gap *between* fires. **Delay ms** is always
 exact, so "wait, then start" stays predictable.
@@ -114,9 +114,12 @@ second. A repeat mapping is usually driving something that counts requests, so
 the defaults aim to stay inside a rate limit rather than risk tripping one.
 Every setting is editable and accepts 10 to 2000 ms.
 
-There is no automatic stop on a latched repeat: once one press has started it,
-it keeps going until you press again, the master **Enabled** toggle is switched
-off, or the bridge stops. Worth knowing before you walk away from the desk.
+A latched repeat stops when you press the button again, when the master
+**Enabled** toggle is switched off, when the controller disconnects, or when you
+switch to a different window. That last one is the safety net for a repeat with
+no timeout of its own: the app it was driving is no longer in front, so it is
+stopped rather than left running behind you. It has to be started again with a
+fresh press.
 
 `repeat` does nothing on a touchpad *tap* — a tap is a press and release in the
 same instant, so there is no hold to repeat. Use `touchpad_click_left` /

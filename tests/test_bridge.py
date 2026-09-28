@@ -66,6 +66,29 @@ def mapping_doc(mappings, actions=None, enabled=True) -> dict:
     return document
 
 
+class StubWindows:
+    """Stand-in for the Win32 window layer that also records how often it is asked."""
+
+    def __init__(self, hwnd: int = 100) -> None:
+        self.hwnd = hwnd
+        self.foreground_calls = 0
+
+    def foreground_hwnd(self) -> int:
+        self.foreground_calls += 1
+        return self.hwnd
+
+
+LATCHED_R2 = {
+    "r2": {
+        "mode": "repeat",
+        "sequence": [["Delete"]],
+        "repeat": {"delayMs": 100, "intervalMs": 50, "latch": True},
+    }
+}
+R2_DOWN = input_report(misc=0x08)  # shoulder bit 3
+R2_UP = input_report()
+
+
 class BridgeTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -639,6 +662,87 @@ class BridgeTest(unittest.TestCase):
         self.bridge.sessions({"id": "a", "status": "working", "pid": 1, "lastActive": 0})
         self.assertEqual(self.bridge.status()["status"], "idle")
         self.assertEqual(self.bridge._session_list(), [])
+
+    # -- latched repeat / window focus --------------------------------------
+
+    def latch_r2(self, hwnd: int = 100) -> StubWindows:
+        """Install a latched r2 and start it, returning the window stub."""
+        self.bridge.put_mapping(mapping_doc(LATCHED_R2), 1)
+        windows = StubWindows(hwnd)
+        self.bridge.windows = windows
+        self.bridge._on_report(R2_DOWN, None)
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), ["r2"])
+        return windows
+
+    def test_latched_repeat_stops_when_focus_moves_to_another_window(self) -> None:
+        windows = self.latch_r2()
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), ["r2"])
+        windows.hwnd = 200
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), [])
+
+    def test_transient_zero_foreground_does_not_stop_a_latch(self) -> None:
+        # Focus is momentarily unowned mid-switch or while a window closes.
+        # That is "no news", not the user leaving the app.
+        windows = self.latch_r2()
+        windows.hwnd = 0
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), ["r2"])
+
+    def test_focus_is_not_polled_while_nothing_is_latched(self) -> None:
+        # The poll runs on every input report, so it must stay off the hot path
+        # when no repeat is running.
+        self.bridge.put_mapping(mapping_doc(LATCHED_R2), 1)
+        windows = StubWindows()
+        self.bridge.windows = windows
+        for _ in range(20):
+            self.bridge._on_report(R2_UP, None)
+        self.assertEqual(windows.foreground_calls, 0)
+
+    def test_a_second_latch_records_a_fresh_baseline(self) -> None:
+        windows = self.latch_r2()
+        windows.hwnd = 200
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), [])
+        # Press again while already in window 200, then leave: still stops.
+        self.bridge._on_report(R2_DOWN, None)
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), ["r2"])
+        self.bridge._on_report(R2_UP, None)
+        windows.hwnd = 300
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), [])
+
+    def test_focus_change_stops_a_latch_even_while_the_ui_holds_focus(self) -> None:
+        # Switching to the config UI is itself leaving the app the repeat was
+        # driving, and the UI blocks input rather than the focus signal.
+        windows = self.latch_r2()
+        self.bridge.ui_active({"active": True})
+        windows.hwnd = 200
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), [])
+
+    def test_a_device_disconnect_forgets_the_latch_baseline(self) -> None:
+        # release_all() already un-latches, but a baseline left over from
+        # before the disconnect would kill the *next* latch on its first poll
+        # whenever the user is now sitting in a different window.
+        windows = self.latch_r2()
+        self.bridge._on_device_status("disconnected")
+        self.assertEqual(self.bridge.engine.latched_inputs(), [])
+        self.assertIsNone(self.bridge._latch_foreground)
+        windows.hwnd = 300
+        self.bridge._on_device_status("connected")
+        self.bridge._on_report(R2_DOWN, None)
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), ["r2"])
+        # Still in window 300: the repeat must survive its own first poll.
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), ["r2"])
+        windows.hwnd = 400
+        self.bridge._on_report(R2_UP, None)
+        self.assertEqual(self.bridge.engine.latched_inputs(), [])
 
 
 if __name__ == "__main__":

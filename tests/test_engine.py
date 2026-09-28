@@ -271,6 +271,97 @@ class EngineTest(unittest.TestCase):
         self.engine.tick(2.1)
         self.assertEqual(len(self.output.events), 6)
 
+    def test_latched_inputs_reports_only_latched_repeats(self) -> None:
+        self.engine.load(
+            document(
+                {
+                    "r2": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": {"delayMs": 100, "intervalMs": 50, "latch": True},
+                    },
+                    "circle": {"mode": "single", "sequence": [["Delete"]]},
+                }
+            )
+        )
+        self.assertEqual(self.engine.latched_inputs(), [])
+        self.engine.press("r2", 0.0)
+        self.engine.release("r2", 0.02)
+        self.assertEqual(self.engine.latched_inputs(), ["r2"])
+
+    def test_stop_latched_cancels_the_pending_fire(self) -> None:
+        self.engine.load(
+            document(
+                {
+                    "r2": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": {"delayMs": 100, "intervalMs": 50, "latch": True},
+                    }
+                }
+            )
+        )
+        self.engine.press("r2", 0.0)
+        self.engine.release("r2", 0.02)
+        self.engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 4)
+        self.assertEqual(self.engine.stop_latched(), ["r2"])
+        self.assertEqual(self.engine.latched_inputs(), [])
+        # The pending callback still carries the old generation and drops itself.
+        self.engine.tick(0.151)
+        self.engine.tick(1.0)
+        self.assertEqual(len(self.output.events), 4)
+
+    def test_stop_latched_does_not_resume_while_the_button_is_still_held(self) -> None:
+        # Bumping the generation kills the chain and nothing reschedules it, so
+        # a button the user is still physically holding stays quiet. Only a
+        # fresh press may restart the repeat.
+        self.engine.load(
+            document(
+                {
+                    "r2": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": {"delayMs": 100, "intervalMs": 50, "latch": True},
+                    }
+                }
+            )
+        )
+        self.engine.press("r2", 0.0)
+        self.engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 4)
+        self.engine.stop_latched()
+        self.engine.tick(0.151)
+        self.engine.tick(1.0)
+        self.assertEqual(len(self.output.events), 4)
+        # Let go and press again: the repeat comes back.
+        self.engine.release("r2", 1.1)
+        self.engine.press("r2", 1.2)
+        self.assertEqual(len(self.output.events), 6)
+        self.engine.tick(1.3)
+        self.assertEqual(len(self.output.events), 8)
+
+    def test_stop_latched_is_a_noop_with_nothing_latched(self) -> None:
+        self.engine.load(
+            document(
+                {
+                    "r2": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": {"delayMs": 100, "intervalMs": 50},
+                    }
+                }
+            )
+        )
+        self.assertEqual(self.engine.stop_latched(), [])
+        # A held (non-latched) repeat is not something stop_latched may touch.
+        self.engine.press("r2", 0.0)
+        self.engine.tick(0.1)
+        self.assertEqual(len(self.output.events), 4)
+        self.assertEqual(self.engine.stop_latched(), [])
+        self.engine.tick(0.151)
+        self.assertEqual(len(self.output.events), 6)
+
     def test_repeat_without_latch_still_stops_on_release(self) -> None:
         self.engine.load(
             document(

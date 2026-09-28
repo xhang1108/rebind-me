@@ -85,6 +85,9 @@ class Bridge:
         self._last_activity_at = 0.0
         self._ui_active = False
         self._ui_last_seen = 0.0
+        # Foreground window at the moment a latched repeat started, so a later
+        # change can be told apart from the one that started it.
+        self._latch_foreground: int | None = None
         self._sessions: dict[str, dict] = {}
         self._status = "idle"
         self._capturing = False
@@ -238,6 +241,10 @@ class Bridge:
                 self._touchpad_zone = None
                 self._touchpad_click = False
                 self._trigger_level = {"left": 0.0, "right": 0.0}
+                # release_all() already un-latched everything; drop the
+                # remembered window too, or a reconnect would compare against
+                # a baseline from before the disconnect.
+                self._latch_foreground = None
         if self._log:
             msg = str(detail or "")
             if hasattr(detail, "occupant") and detail.occupant:
@@ -314,6 +321,34 @@ class Bridge:
             if newly_pressed:
                 self._last_activity_at = now
             self._maybe_auto_mute(now)
+            # Deliberately outside the `blocked` branch above: switching to the
+            # config UI is itself leaving the app the repeat was driving.
+            self._stop_latched_on_focus_change()
+
+    def _stop_latched_on_focus_change(self) -> None:
+        """Cancel latched repeats when the user moves to another window.
+
+        A latched repeat has no timeout of its own, so switching away from the
+        app it drives is the natural signal that it was left running by
+        accident. The poll only runs while something is actually latched, which
+        keeps ``GetForegroundWindow`` out of the hot path in the common case.
+        """
+        if not self.engine.latched_inputs():
+            self._latch_foreground = None
+            return
+        current = self.windows.foreground_hwnd()
+        if self._latch_foreground is None:
+            # First sighting after a latch: record where the user was, not
+            # where they have since wandered to.
+            self._latch_foreground = current
+            return
+        # A zero hwnd means focus is momentarily unowned -- mid-switch, or a
+        # window closing. That is "no news", not "the user left".
+        if current and current != self._latch_foreground:
+            stopped = self.engine.stop_latched()
+            self._latch_foreground = None
+            if stopped and self._log:
+                self._log.info("stopped latched repeat on focus change: %s", ", ".join(stopped))
 
     def _maybe_auto_mute(self, now: float) -> None:
         """Mute the mic once the controller has been idle for long enough."""
