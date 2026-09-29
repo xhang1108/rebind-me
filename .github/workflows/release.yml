@@ -23,7 +23,10 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # Windows, like CI: the suite imports winapi code (ctypes.WinDLL) that does
+    # not exist on Linux. The steps written in bash say so explicitly, because
+    # the default shell here is PowerShell.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,6 +54,7 @@ jobs:
 
       - name: Resolve the release version
         id: version
+        shell: bash
         run: |
           python - <<'PY'
           import json, os, pathlib, re, subprocess, sys
@@ -90,6 +94,7 @@ jobs:
       - name: Publish to npm
         if: steps.version.outputs.release == 'true'
         working-directory: plugin
+        shell: bash
         run: |
           version="${{ steps.version.outputs.version }}"
           if npm view "rebind-me@${version}" version >/dev/null 2>&1; then
@@ -102,6 +107,7 @@ jobs:
         if: steps.version.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             --target "$GITHUB_SHA" \
