@@ -31,7 +31,7 @@ test("package metadata targets the OpenCode 2 plugin API", async () => {
     await readFile(new URL("../plugin/package.json", import.meta.url), "utf8"),
   );
   assert.equal(pkg.name, "rebind-me");
-  assert.equal(pkg.version, "0.4.0");
+  assert.equal(pkg.version, "0.4.1");
   assert.equal(pkg.main, "index.ts");
   assert.equal(pkg.devDependencies["@opencode/plugin"], "2.0.15");
   assert.equal(pkg.devDependencies["@opencode-ai/plugin"], undefined);
