@@ -1,6 +1,6 @@
 {
   "name": "rebind-me",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "OpenCode 2 plugin that forwards session events to the Rebind Me bridge",
   "type": "module",
   "main": "index.ts",
