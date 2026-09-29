@@ -17,6 +17,7 @@ htmlcov/
 # Node
 node_modules/
 npm-debug.log*
+*.tgz
 
 # Runtime data
 *.log
