@@ -343,6 +343,35 @@ class MappingValidationTest(unittest.TestCase):
             result["actions"]["touchpad_tap_right"]["action"], "open-config-ui"
         )
 
+    def test_webhook_requires_an_http_url(self) -> None:
+        document = mapping_doc_with(actions={"square": {"action": "webhook", "params": {"url": "ftp://x"}}})
+        with self.assertRaises(RebindError):
+            validate_mapping_store(document)
+
+    def test_webhook_accepts_down_and_up_urls(self) -> None:
+        document = mapping_doc_with(
+            actions={
+                "square": {
+                    "action": "webhook",
+                    "params": {
+                        "url": "http://127.0.0.1:8978/v1/dictation/start",
+                        "method": "POST",
+                        "upUrl": "http://127.0.0.1:8978/v1/dictation/stop",
+                    },
+                }
+            }
+        )
+        result = validate_mapping_store(document)
+        self.assertEqual(
+            result["actions"]["square"]["params"]["upUrl"],
+            "http://127.0.0.1:8978/v1/dictation/stop",
+        )
+
+    def test_webhook_missing_url_is_rejected(self) -> None:
+        document = mapping_doc_with(actions={"square": {"action": "webhook", "params": {}}})
+        with self.assertRaises(RebindError):
+            validate_mapping_store(document)
+
 
 class PresetsValidationTest(unittest.TestCase):
     def test_empty_presets_valid(self) -> None:

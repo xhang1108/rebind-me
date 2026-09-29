@@ -368,6 +368,49 @@ class BridgeTest(unittest.TestCase):
         self.bridge.ui_active({"active": True})
         self.assertIn(("up", "ShiftLeft"), self.output.events)
 
+    def test_release_while_ui_blocked_releases_hold(self) -> None:
+        # Press before the UI takes focus, release while it holds focus: the
+        # release must still reach the engine, or the key stays injected
+        # forever and the next press is swallowed as "already pressed".
+        document = mapping_doc({"cross": {"mode": "hold", "sequence": [["ShiftLeft"]]}})
+        self.bridge.put_mapping(document, 1)
+        self.bridge._on_report(input_report(face=0x28), None)
+        self.assertIn(("down", "ShiftLeft"), self.output.events)
+        self.bridge.ui_active({"active": True})
+        self.output.events.clear()
+        # ui_active(True) releases through release_all; re-press while blocked
+        # is suppressed, then released while still blocked.
+        self.bridge._on_report(input_report(face=0x28), None)
+        self.bridge._on_report(input_report(face=0x08), None)
+        self.assertNotIn(("down", "ShiftLeft"), self.output.events)
+        self.bridge.ui_active({"active": False})
+        # Engine state must be clean: a fresh press works exactly once.
+        self.bridge._on_report(input_report(face=0x28), None)
+        self.assertEqual(
+            [event for event in self.output.events if event[1] == "ShiftLeft"],
+            [("down", "ShiftLeft")],
+        )
+        self.bridge._on_report(input_report(face=0x08), None)
+        self.assertIn(("up", "ShiftLeft"), self.output.events)
+
+    def test_hold_released_over_ui_does_not_stick(self) -> None:
+        # The exact stuck-key report: down before focus, up while focused.
+        document = mapping_doc({"cross": {"mode": "hold", "sequence": [["F4"]]}})
+        self.bridge.put_mapping(document, 1)
+        self.bridge._on_report(input_report(face=0x28), None)
+        self.assertIn(("down", "F4"), self.output.events)
+        self.bridge._ui_active = True
+        self.bridge._ui_last_seen = time.monotonic()
+        self.bridge._on_report(input_report(face=0x08), None)
+        self.assertIn(("up", "F4"), self.output.events)
+        # A later physical F4 must not be swallowed as "already pressed".
+        self.bridge._ui_active = False
+        self.bridge._on_report(input_report(face=0x28), None)
+        self.assertEqual(
+            [event for event in self.output.events if event[1] == "F4"],
+            [("down", "F4"), ("up", "F4"), ("down", "F4")],
+        )
+
     def test_ui_focus_resumes_when_the_page_reports_blur(self) -> None:
         document = mapping_doc({"cross": {"mode": "single", "sequence": [["KeyK"]]}})
         self.bridge.put_mapping(document, 1)
@@ -499,7 +542,7 @@ class BridgeTest(unittest.TestCase):
 
         self.bridge.actions = BoomActions()
         self.bridge._log = FakeLog()
-        self.bridge._run_action("api", "focus-terminal", {})
+        self.bridge._run_action("api", "focus-terminal", {}, True)
         self.assertEqual(len(self.bridge._log.warnings), 1)
 
     def test_sessions_update_lighting_status(self) -> None:

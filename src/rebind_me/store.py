@@ -56,7 +56,13 @@ TOUCHPAD_ZONE_INPUTS = (
 MAPPABLE_INPUTS = INPUT_NAMES + TOUCHPAD_ZONE_INPUTS
 
 MAPPING_MODES = ("single", "repeat", "hold", "toggle")
-ACTIONS = ("focus-terminal", "switch-to-app", "toggle-mouse-mode", "open-config-ui")
+ACTIONS = (
+    "focus-terminal",
+    "switch-to-app",
+    "toggle-mouse-mode",
+    "open-config-ui",
+    "webhook",
+)
 
 # The mic button is a fixed hardware control owned by the bridge: it is never
 # a mapping or action target, and any stale entry for it is dropped.
@@ -278,9 +284,46 @@ def _validate_action(entry: object) -> dict:
         if not isinstance(process, str) or not process:
             raise _schema("switch-to-app requires params.process")
         return {"action": action, "params": {"process": process}}
+    if action == "webhook":
+        return _validate_webhook_action(params)
     if params:
         raise _schema(f"action {action!r} takes no params")
     return {"action": action}
+
+
+def _validate_webhook_action(params: dict) -> dict:
+    """Validate a generic HTTP ``webhook`` action.
+
+    ``url`` is required and must be an http(s) URL; ``upUrl`` is optional and
+    likewise restricted. Methods are normalised by the client, so any value is
+    accepted and defaulted. Bodies are opaque strings.
+    """
+    url = params.get("url")
+    if not isinstance(url, str) or not _is_http_url(url):
+        raise _schema("webhook requires a http(s) params.url")
+    clean: dict = {"url": url}
+    for key in ("method", "body"):
+        value = params.get(key)
+        if value is not None:
+            if not isinstance(value, str):
+                raise _schema(f"webhook {key!r} must be a string")
+            clean[key] = value
+    up_url = params.get("upUrl")
+    if up_url is not None:
+        if not isinstance(up_url, str) or not _is_http_url(up_url):
+            raise _schema("webhook upUrl must be a http(s) URL")
+        clean["upUrl"] = up_url
+        for key in ("upMethod", "upBody"):
+            value = params.get(key)
+            if value is not None:
+                if not isinstance(value, str):
+                    raise _schema(f"webhook {key!r} must be a string")
+                clean[key] = value
+    return {"action": "webhook", "params": clean}
+
+
+def _is_http_url(value: str) -> bool:
+    return value.startswith("http://") or value.startswith("https://")
 
 
 def _validate_touchpad(value: object) -> dict:

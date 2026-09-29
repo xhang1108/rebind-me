@@ -105,7 +105,7 @@ class MappingEngine:
     def __init__(
         self,
         output: object,
-        action_handler: Callable[[str, str, dict], None] | None = None,
+        action_handler: Callable[[str, str, dict, bool], None] | None = None,
         chord_delay_ms: int = DEFAULT_CHORD_DELAY_MS,
         random_source: _RandomCallback = random.random,
     ):
@@ -115,6 +115,7 @@ class MappingEngine:
         self._random_source = random_source
         self._bindings: dict[str, _Binding] = {}
         self._actions: dict[str, dict] = {}
+        self._active_actions: set[str] = set()
         self._pending: list[tuple[float, int, _TimerCallback]] = []
         self._counter = 0
         self.enabled = True
@@ -126,6 +127,7 @@ class MappingEngine:
         self._pending.clear()
         self._bindings = {}
         self._actions = document.get("actions", {})
+        self._active_actions = set()
         for name, entry in document.get("mappings", {}).items():
             binding = _Binding(entry=entry)
             if entry.get("mode") == "toggle" and entry.get("toggleInitial") == "on":
@@ -148,7 +150,8 @@ class MappingEngine:
         if name in self._actions:
             action = self._actions[name]
             if self.action_handler is not None:
-                self.action_handler(name, action["action"], action.get("params", {}))
+                self.action_handler(name, action["action"], action.get("params", {}), True)
+            self._active_actions.add(name)
             return
         binding = self._bindings.get(name)
         if binding is None or binding.pressed:
@@ -182,6 +185,16 @@ class MappingEngine:
             binding.latched = self._latches(binding)
 
     def release(self, name: str, now: float) -> None:
+        # Actions are released independently of the binding state machine so a
+        # push-to-talk action can stop on button-up exactly when it started on
+        # button-down. The handler gets ``pressed=False``; this mirrors press.
+        if name in self._active_actions:
+            self._active_actions.discard(name)
+            action = self._actions.get(name)
+            if action is not None and self.action_handler is not None:
+                self.action_handler(
+                    name, action["action"], action.get("params", {}), False
+                )
         binding = self._bindings.get(name)
         if binding is None or not binding.pressed:
             return
@@ -192,6 +205,15 @@ class MappingEngine:
         # must survive the release so a quick tap still plays every segment.
 
     def release_all(self) -> None:
+        # A held push-to-talk action must be stopped (button-up) too, so a
+        # disconnect mid-hold does not leave a push-to-talk webhook stuck on.
+        for name in list(self._active_actions):
+            self._active_actions.discard(name)
+            action = self._actions.get(name)
+            if action is not None and self.action_handler is not None:
+                self.action_handler(
+                    name, action["action"], action.get("params", {}), False
+                )
         for binding in self._bindings.values():
             if binding.active or binding.held_codes:
                 self._deactivate(binding)

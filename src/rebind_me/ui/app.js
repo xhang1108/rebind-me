@@ -134,11 +134,15 @@ function box(cx, cy, w, h) {
   return `left:${pct(cx - w / 2)};top:${pct(cy - h / 2)};width:${pct(w)};height:${pct(h)}`;
 }
 
-function selectInput(input, options = {}) {
+function selectInput(input) {
   if (FIXED_INPUTS.has(input)) return;
-  // A glyph press re-records rather than collapses, even when the input is
-  // already selected; only a list row toggles selection off.
-  if (selected === input && !options.record) {
+  // Clicking a controller glyph or a list row selects the input and opens its
+  // editor; clicking the already-selected input again collapses it. Recording
+  // is started explicitly from the editor (the chord "Add key" button), never
+  // on the bare click -- an automatic capture would clobber an existing action
+  // mapping the moment any key is pressed (applyCaptured deletes
+  // working.actions[input]).
+  if (selected === input) {
     clearSelection();
     return;
   }
@@ -158,11 +162,6 @@ function selectInput(input, options = {}) {
   renderEditor();
   const node = document.querySelector(`#mappings .map-item[data-input="${input}"]`);
   if (node) node.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  // Clicking a controller glyph means "assign this button now": open its
-  // editor and start capturing straight away. Cancel leaves the old mapping.
-  if (options.record && working && working.enabled) {
-    startRecording({ input, index: 0, replaceAll: true });
-  }
 }
 
 function clearSelection() {
@@ -364,7 +363,7 @@ function addHitbox(svg, element, input) {
   shape.setAttribute("data-input", input);
   shape.setAttribute("fill", "transparent");
   shape.setAttribute("pointer-events", "all");
-  shape.addEventListener("click", () => selectInput(input, { record: true }));
+  shape.addEventListener("click", () => selectInput(input));
   shape.addEventListener("mouseenter", () => hoverPath(input, true));
   shape.addEventListener("mouseleave", () => hoverPath(input, false));
   const title = document.createElementNS(SVG_NS, "title");
@@ -446,7 +445,7 @@ function tagSvg(container) {
       : mappingSummary(working.mappings[input], working.actions[input]);
     hint.textContent = summary === "-" ? input : `${input}: ${summary}`;
     path.appendChild(hint);
-    path.addEventListener("click", () => selectInput(input, { record: true }));
+    path.addEventListener("click", () => selectInput(input));
     if (input === "touchpad") return;
     path.dataset.input = input;
   });
@@ -561,7 +560,7 @@ function initStickSnap(wrap) {
   wrap.addEventListener("click", () => {
     // Only a hovered direction selects; the locked preview is for holding the
     // knob between polls and must never hijack a click on another glyph.
-    if (stickHoverInput) selectInput(stickHoverInput, { record: true });
+    if (stickHoverInput) selectInput(stickHoverInput);
   });
 }
 
@@ -647,6 +646,12 @@ function renderEditor() {
     form = { kind: "action", mode: "single", sequenceText: "", mouse: MOUSE_CODES[0], scroll: SCROLL_CODES[0], repeatDelay: DEFAULT_REPEAT_DELAY_MS, repeatInterval: DEFAULT_REPEAT_INTERVAL_MS, repeatTiming: "fixed", repeatMin: DEFAULT_REPEAT_MIN_MS, repeatMax: DEFAULT_REPEAT_MAX_MS, repeatLatch: false, toggleInitial: "off" };
     form.action = action.action;
     form.process = (action.params || {}).process || "";
+    const wh = action.params || {};
+    form.webhookUrl = wh.url || "";
+    form.webhookMethod = wh.method || "POST";
+    form.webhookBody = wh.body || "";
+    form.webhookUpUrl = wh.upUrl || "";
+    form.webhookUpMethod = wh.upMethod || "POST";
   } else {
     form = mappingFormFromEntry(entry);
     if (form.kind === "none") form.kind = "sequence";
@@ -680,7 +685,21 @@ function renderEditor() {
     <div class="line" data-role="mouse-wrap"><label>Mouse / scroll <select id="ed-pointer" name="pointer" data-role="pointer">${pointerOptions(form.pointer)}</select></label></div>
     <div class="line" data-role="action-wrap">
       <label>Action <select id="ed-action" name="action" data-role="action">${options(ACTIONS, form.action)}</select></label>
-      <label>Process <input id="ed-process" name="process" data-role="process" placeholder="process.exe" value="${form.process}" /></label>
+      <label data-role="process-wrap">Process <input id="ed-process" name="process" data-role="process" placeholder="process.exe" value="${form.process}" /></label>
+      <div data-role="port-wrap" class="webhook-fields">
+        <span class="sub">On press</span>
+        <input data-role="webhook-url" placeholder="http://127.0.0.1:8978/v1/dictation/start" value="${form.webhookUrl}" />
+        <div class="webhook-row">
+          <span class="sub">method</span>
+          <select data-role="webhook-method">${options(["GET", "POST", "PUT", "DELETE", "PATCH"], form.webhookMethod)}</select>
+        </div>
+        <span class="sub">On release (optional)</span>
+        <input data-role="webhook-up-url" placeholder="http://127.0.0.1:8978/v1/dictation/stop" value="${form.webhookUpUrl}" />
+        <div class="webhook-row">
+          <span class="sub">method</span>
+          <select data-role="webhook-up-method">${options(["GET", "POST", "PUT", "DELETE", "PATCH"], form.webhookUpMethod)}</select>
+        </div>
+      </div>
     </div>
     <div class="line" data-role="repeat-wrap">
       <label>Delay ms <input id="ed-repeatDelay" name="repeatDelay" type="number" min="${REPEAT_MIN_MS}" max="${REPEAT_MAX_MS}" data-role="repeatDelay" value="${form.repeatDelay}" /></label>
@@ -709,6 +728,14 @@ function renderEditor() {
     editor.querySelector('[data-role="pointer"]').addEventListener("change", applyEditor);
     editor.querySelector('[data-role="action"]').addEventListener("change", () => { syncEditor(); applyEditor(); });
     editor.querySelector('[data-role="process"]').addEventListener("input", applyEditor);
+    // The webhook fields replaced the old TypeWhisper port field; bind them by
+    // their real roles. (A stale [data-role="port"] selector returned null and
+    // threw here, which aborted renderEditor before syncEditor() ran -- leaving
+    // every conditional section visible for every mapping.)
+    const webhookInputs = editor.querySelectorAll('[data-role="webhook-url"], [data-role="webhook-up-url"]');
+    webhookInputs.forEach((node) => node.addEventListener("input", applyEditor));
+    const webhookMethods = editor.querySelectorAll('[data-role="webhook-method"], [data-role="webhook-up-method"]');
+    webhookMethods.forEach((node) => node.addEventListener("change", applyEditor));
     editor.querySelector('[data-role="repeatDelay"]').addEventListener("input", applyEditor);
     editor.querySelector('[data-role="repeatTiming"]').addEventListener("change", () => { syncEditor(); applyEditor(); });
     editor.querySelector('[data-role="repeatInterval"]').addEventListener("input", applyEditor);
@@ -808,6 +835,9 @@ function syncEditor() {
   show('[data-role="seq-wrap"]', type === "sequence");
   show('[data-role="mouse-wrap"]', type === "mouse");
   show('[data-role="action-wrap"]', type === "action");
+  const actionName = editor.querySelector('[data-role="action"]').value;
+  show('[data-role="process-wrap"]', actionName === "switch-to-app");
+  show('[data-role="port-wrap"]', actionName === "webhook");
   show('[data-role="repeat-wrap"]', repeat && mode === "repeat" && !multi);
   show('[data-role="repeat-fixed-wrap"]', repeatTiming !== "random");
   show('[data-role="repeat-random-wrap"]', repeatTiming === "random");
@@ -839,9 +869,30 @@ function applyEditor() {
   delete working.actions[selected];
   if (type === "action") {
     const action = editor.querySelector('[data-role="action"]').value;
-    const entry = { action };
-    if (action === "switch-to-app") entry.params = { process: editor.querySelector('[data-role="process"]').value.trim() };
-    working.actions[selected] = entry;
+    // Only persist an action once its required params are filled. Writing an
+    // incomplete webhook (no url) or switch-to-app (no process) would fail the
+    // bridge's schema check and surface as SCHEMA_ERROR -- so the button simply
+    // keeps no action until the field is valid.
+    if (action === "webhook") {
+      const url = editor.querySelector('[data-role="webhook-url"]').value.trim();
+      if (url) {
+        const params = { url };
+        const method = editor.querySelector('[data-role="webhook-method"]').value;
+        if (method && method !== "POST") params.method = method;
+        const upUrl = editor.querySelector('[data-role="webhook-up-url"]').value.trim();
+        if (upUrl) {
+          params.upUrl = upUrl;
+          const upMethod = editor.querySelector('[data-role="webhook-up-method"]').value;
+          if (upMethod && upMethod !== "POST") params.upMethod = upMethod;
+        }
+        working.actions[selected] = { action, params };
+      }
+    } else if (action === "switch-to-app") {
+      const process = editor.querySelector('[data-role="process"]').value.trim();
+      if (process) working.actions[selected] = { action, params: { process } };
+    } else {
+      working.actions[selected] = { action };
+    }
   } else if (type === "mouse") {
     // The pointer dropdown mixes mouse buttons and scroll directions, so pick
     // the kind from the code and let the shared builder attach the timing.

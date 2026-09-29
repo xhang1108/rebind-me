@@ -462,7 +462,9 @@ class EngineTest(unittest.TestCase):
         calls: list[tuple] = []
         engine = MappingEngine(
             self.output,
-            action_handler=lambda name, action, params: calls.append((name, action, params)),
+            action_handler=lambda name, action, params, pressed: calls.append(
+                (name, action, params, pressed)
+            ),
         )
         engine.load(
             document(
@@ -476,8 +478,59 @@ class EngineTest(unittest.TestCase):
             )
         )
         engine.press("triangle", 0.0)
-        self.assertEqual(calls, [("triangle", "switch-to-app", {"process": "OpenChamber"})])
+        self.assertEqual(
+            calls, [("triangle", "switch-to-app", {"process": "OpenChamber"}, True)]
+        )
         self.assertEqual(self.output.events, [])
+
+    def test_action_push_to_talk_starts_on_press_stops_on_release(self) -> None:
+        calls: list[tuple] = []
+        engine = MappingEngine(
+            self.output,
+            action_handler=lambda name, action, params, pressed: calls.append(
+                (name, action, params, pressed)
+            ),
+        )
+        engine.load(
+            document(
+                {},
+                actions={"triangle": {"action": "webhook", "params": {"url": "http://127.0.0.1:8978/start"}}},
+            )
+        )
+        engine.press("triangle", 0.0)
+        engine.release("triangle", 0.5)
+        self.assertEqual(
+            calls,
+            [
+                ("triangle", "webhook", {"url": "http://127.0.0.1:8978/start"}, True),
+                ("triangle", "webhook", {"url": "http://127.0.0.1:8978/start"}, False),
+            ],
+        )
+        self.assertEqual(self.output.events, [])  # no synthetic key events
+
+    def test_action_release_all_stops_a_held_push_to_talk(self) -> None:
+        calls: list[tuple] = []
+        engine = MappingEngine(
+            self.output,
+            action_handler=lambda name, action, params, pressed: calls.append(
+                (name, action, params, pressed)
+            ),
+        )
+        engine.load(
+            document(
+                {},
+                actions={"triangle": {"action": "webhook", "params": {"url": "http://x/start"}}},
+            )
+        )
+        engine.press("triangle", 0.0)
+        engine.release_all()
+        self.assertEqual(
+            calls,
+            [
+                ("triangle", "webhook", {"url": "http://x/start"}, True),
+                ("triangle", "webhook", {"url": "http://x/start"}, False),
+            ],
+        )
 
     def test_disabled_ignores_input(self) -> None:
         self.engine.load(

@@ -157,5 +157,64 @@ class ActionRunnerTest(unittest.TestCase):
             runner.run("l1", "explode", {})
 
 
+class FakeWebhook:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def request(self, url, method=None, body=None, timeout=2.0):
+        self.calls.append({"url": url, "method": method or "POST", "body": body})
+        return {}
+
+
+class WebhookActionTest(unittest.TestCase):
+    def test_press_fires_down_url_release_fires_up_url(self) -> None:
+        client = FakeWebhook()
+        runner = ActionRunner(FakeWindows([]), webhook=client)
+        runner.run(
+            "square",
+            "webhook",
+            {
+                "url": "http://127.0.0.1:8978/v1/dictation/start",
+                "upUrl": "http://127.0.0.1:8978/v1/dictation/stop",
+            },
+            pressed=True,
+        )
+        runner.run(
+            "square",
+            "webhook",
+            {
+                "url": "http://127.0.0.1:8978/v1/dictation/start",
+                "upUrl": "http://127.0.0.1:8978/v1/dictation/stop",
+            },
+            pressed=False,
+        )
+        self.assertEqual(
+            client.calls,
+            [
+                {"url": "http://127.0.0.1:8978/v1/dictation/start", "method": "POST", "body": None},
+                {"url": "http://127.0.0.1:8978/v1/dictation/stop", "method": "POST", "body": None},
+            ],
+        )
+
+    def test_press_only_webhook_ignores_release(self) -> None:
+        client = FakeWebhook()
+        runner = ActionRunner(FakeWindows([]), webhook=client)
+        runner.run("square", "webhook", {"url": "http://127.0.0.1:9/x"}, pressed=True)
+        runner.run("square", "webhook", {"url": "http://127.0.0.1:9/x"}, pressed=False)
+        # A single call: release with no upUrl is a no-op.
+        self.assertEqual(len(client.calls), 1)
+
+    def test_method_and_body_are_forwarded(self) -> None:
+        client = FakeWebhook()
+        runner = ActionRunner(FakeWindows([]), webhook=client)
+        runner.run(
+            "square",
+            "webhook",
+            {"url": "http://h/x", "method": "PUT", "body": "hi", "upUrl": "http://h/y", "upMethod": "DELETE"},
+            pressed=True,
+        )
+        self.assertEqual(client.calls[0], {"url": "http://h/x", "method": "PUT", "body": "hi"})
+
+
 if __name__ == "__main__":
     unittest.main()

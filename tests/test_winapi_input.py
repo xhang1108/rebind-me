@@ -60,6 +60,14 @@ class OutputConstructionTest(unittest.TestCase):
         self.assertEqual(event.ki.wVk, keys.VK_CODES["KeyK"])
         self.assertEqual(event.ki.dwFlags, 0)
 
+    def test_keyboard_event_carries_hardware_scan_code(self) -> None:
+        self.assertEqual(win_input.scan_code_for_vk(keys.VK_CODES["F4"]), 0x3E)
+        self.assertNotEqual(win_input.scan_code_for_vk(keys.VK_CODES["KeyK"]), 0)
+        self.output.key_down("F4")
+        event = self.captured[0]
+        self.assertEqual(event.ki.wVk, keys.VK_CODES["F4"])
+        self.assertEqual(event.ki.wScan, 0x3E)
+
     def test_mouse_button_event(self) -> None:
         self.output.key_down("MouseRight")
         event = self.captured[0]

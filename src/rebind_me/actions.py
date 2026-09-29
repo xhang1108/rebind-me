@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Callable, Sequence
 
 from .errors import RebindError
+from .webhook import WebhookClient
 
 STATUS_RANK = {"completed": 0, "done": 0, "working": 1, "busy": 1}
 
@@ -57,14 +58,22 @@ class ActionRunner:
         sessions_provider: Callable[[], Sequence[dict]] | None = None,
         toggle_mouse_mode: Callable[[], None] | None = None,
         open_ui: Callable[[], None] | None = None,
+        webhook: WebhookClient | None = None,
     ):
         self.windows = windows
         self.sessions_provider = sessions_provider or (lambda: [])
         self.toggle_mouse_mode = toggle_mouse_mode or (lambda: None)
         self.open_ui = open_ui or (lambda: None)
+        self.webhook = webhook or WebhookClient()
         self._return_hwnd: int | None = None
 
-    def run(self, name: str, action: str, params: dict | None = None) -> dict:
+    def run(
+        self,
+        name: str,
+        action: str,
+        params: dict | None = None,
+        pressed: bool = True,
+    ) -> dict:
         params = params or {}
         if action == "focus-terminal":
             return self._focus_terminal()
@@ -76,7 +85,28 @@ class ActionRunner:
         if action == "open-config-ui":
             self.open_ui()
             return {"opened": True}
+        if action == "webhook":
+            return self._webhook(params, pressed)
         raise RebindError("SCHEMA_ERROR", f"unknown action: {action!r}")
+
+    def _webhook(self, params: dict, pressed: bool) -> dict:
+        """Fire a configured request. Press fires ``url``; release fires ``upUrl``
+        when present. A press-only webhook simply omits ``upUrl``."""
+        if pressed:
+            url = params.get("url")
+            if not url:
+                return {"skipped": True, "reason": "no-url"}
+            self.webhook.request(
+                url, method=params.get("method"), body=params.get("body")
+            )
+            return {"fired": "down"}
+        up_url = params.get("upUrl")
+        if not up_url:
+            return {"ignored": True}
+        self.webhook.request(
+            up_url, method=params.get("upMethod"), body=params.get("upBody")
+        )
+        return {"fired": "up"}
 
     def _focus_terminal(self) -> dict:
         candidates = self.windows.list_windows()

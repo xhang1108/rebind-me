@@ -41,6 +41,7 @@ from .store import (
     validate_settings,
 )
 from .touchpad import TouchpadController
+from .webhook import WebhookClient
 from .winapi.input import SendInputOutput
 from .winapi.mutex import BRIDGE_MUTEX, SingleInstance
 from .winapi.windows import Windows
@@ -117,6 +118,7 @@ class Bridge:
             sessions_provider=self._session_list,
             toggle_mouse_mode=self._toggle_mouse_mode,
             open_ui=self._open_ui,
+            webhook=WebhookClient(),
         )
         self._key_capture = KeyCapture()
         self._autostart = AutostartController()
@@ -302,11 +304,16 @@ class Bridge:
                 else:
                     self._mic_muted = self._mic_button not in inputs
             blocked = self._ui_blocks_input(now)
+            # Releases are always delivered, even while the config UI holds
+            # focus. The physical state (``_active_inputs``) is updated above
+            # regardless of ``blocked``, so swallowing a release here leaves
+            # the engine logically pressed -- with a hold/toggle key still
+            # physically injected -- forever. Only new presses are suppressed.
+            for name in previous - inputs:
+                self.engine.release(name, now)
             if not blocked:
                 for name in newly_pressed:
                     self.engine.press(name, now)
-                for name in previous - inputs:
-                    self.engine.release(name, now)
                 self.engine.tick(now)
 
             # Tap and click are resolved through the engine, so they support
@@ -314,9 +321,12 @@ class Bridge:
             events = self.touchpad.update(
                 state.touch, "touchpad" in state.buttons, now, self.output
             )
-            if not blocked:
-                for kind, zone in events:
-                    self._apply_touchpad_gesture(kind, zone, now)
+            # Same rule as above: a click released over the config UI must
+            # still reach the engine, or a held touchpad mapping sticks.
+            for kind, zone in events:
+                if blocked and kind != "click-up":
+                    continue
+                self._apply_touchpad_gesture(kind, zone, now)
 
             if newly_pressed:
                 self._last_activity_at = now
@@ -434,9 +444,9 @@ class Bridge:
                 pass
 
     # -- actions ----------------------------------------------------------
-    def _run_action(self, name: str, action: str, params: dict) -> None:
+    def _run_action(self, name: str, action: str, params: dict, pressed: bool) -> None:
         try:
-            self.actions.run(name, action, params)
+            self.actions.run(name, action, params, pressed)
         except RebindError as error:
             if self._log:
                 self._log.warning("action %s failed: %s", action, error.message)

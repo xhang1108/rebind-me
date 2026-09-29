@@ -52,6 +52,29 @@ _SCROLL_WHEEL = {
 
 ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
 
+_MAPVK_VK_TO_VSC = 0
+
+_scan_cache: dict[int, int] = {}
+
+
+def scan_code_for_vk(vk: int) -> int:
+    """Hardware scan code for a virtual key, cached.
+
+    ``SendInput`` accepts VK-only events, but a low-level hook then observes
+    ``scanCode == 0`` while a physical press carries the real code (F4 is
+    ``0x3E``). Push-to-talk apps that validate the scan code drop the
+    VK-only event, so ``wScan`` is always populated; ``0`` means unmapped.
+    """
+    if vk not in _scan_cache:
+        code = 0
+        try:
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            code = int(user32.MapVirtualKeyW(vk, _MAPVK_VK_TO_VSC) or 0)
+        except (AttributeError, OSError, ValueError):
+            code = 0
+        _scan_cache[vk] = code
+    return _scan_cache[vk]
+
 
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [
@@ -139,7 +162,7 @@ class SendInputOutput:
         event.type = INPUT_KEYBOARD
         event.ki = KEYBDINPUT(
             wVk=VK_CODES[code],
-            wScan=0,
+            wScan=scan_code_for_vk(VK_CODES[code]),
             dwFlags=keyboard_flags(code, up),
             time=0,
             dwExtraInfo=0,
@@ -198,5 +221,6 @@ __all__ = [
     "SendInputOutput",
     "keyboard_flags",
     "mouse_button_flags",
+    "scan_code_for_vk",
     "scroll_flags",
 ]
