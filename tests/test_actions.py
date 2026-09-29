@@ -139,10 +139,31 @@ class ActionRunnerTest(unittest.TestCase):
         self.assertFalse(result["focused"])
         self.assertEqual(result["reason"], "gone")
 
+    def test_switch_to_app_release_edge_does_not_toggle_back(self) -> None:
+        # One physical tap reaches the action handler twice: press then release.
+        # switch-to-app must only act on the press, or it jumps away and back.
+        windows = FakeWindows(
+            [window(1, 100), window(2, 200)],
+            names={100: "explorer.exe", 200: "OpenChamber.exe"},
+            foreground=1,
+        )
+        runner = ActionRunner(windows)
+        params = {"process": "OpenChamber"}
+        runner.run("triangle", "switch-to-app", params, pressed=True)
+        runner.run("triangle", "switch-to-app", params, pressed=False)
+        self.assertEqual(windows.focused, [2])
+
     def test_toggle_mouse_mode(self) -> None:
         calls: list[str] = []
         runner = ActionRunner(FakeWindows([]), toggle_mouse_mode=lambda: calls.append("t"))
         runner.run("l1", "toggle-mouse-mode", {})
+        self.assertEqual(calls, ["t"])
+
+    def test_toggle_mouse_mode_release_edge_is_ignored(self) -> None:
+        calls: list[str] = []
+        runner = ActionRunner(FakeWindows([]), toggle_mouse_mode=lambda: calls.append("t"))
+        runner.run("l1", "toggle-mouse-mode", {}, pressed=True)
+        runner.run("l1", "toggle-mouse-mode", {}, pressed=False)
         self.assertEqual(calls, ["t"])
 
     def test_open_config_ui(self) -> None:

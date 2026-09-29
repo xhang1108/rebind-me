@@ -75,6 +75,24 @@ class ActionRunner:
         pressed: bool = True,
     ) -> dict:
         params = params or {}
+        # A webhook is push-to-talk: press fires ``url``, release fires ``upUrl``.
+        if action == "webhook":
+            return self._webhook(params, pressed)
+        if action not in (
+            "focus-terminal",
+            "switch-to-app",
+            "toggle-mouse-mode",
+            "open-config-ui",
+        ):
+            raise RebindError("SCHEMA_ERROR", f"unknown action: {action!r}")
+        # Every other action is edge-triggered on button-down. The engine also
+        # calls the handler on release (so a webhook can stop on button-up), and
+        # an action bound to a button is dispatched once per edge. Running an
+        # instantaneous action again on release would double-fire a single tap:
+        # switch-to-app would jump to the app and immediately jump back, and
+        # toggle-mouse-mode would flip twice and appear not to toggle at all.
+        if not pressed:
+            return {"ignored": True}
         if action == "focus-terminal":
             return self._focus_terminal()
         if action == "switch-to-app":
@@ -82,12 +100,8 @@ class ActionRunner:
         if action == "toggle-mouse-mode":
             self.toggle_mouse_mode()
             return {"toggled": True}
-        if action == "open-config-ui":
-            self.open_ui()
-            return {"opened": True}
-        if action == "webhook":
-            return self._webhook(params, pressed)
-        raise RebindError("SCHEMA_ERROR", f"unknown action: {action!r}")
+        self.open_ui()
+        return {"opened": True}
 
     def _webhook(self, params: dict, pressed: bool) -> dict:
         """Fire a configured request. Press fires ``url``; release fires ``upUrl``
