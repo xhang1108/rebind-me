@@ -4,7 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rebind-me"
-version = "0.4.2"
+# The version lives in ``rebind_me.__version__`` (with its own copy in
+# plugin/package.json for npm); tests/test_release_contract.py keeps them in
+# step, so pyproject.toml must never carry a third copy of its own.
+dynamic = ["version"]
 description = "Use a DualSense controller as a local input remapper on Windows 11"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +32,9 @@ Repository = "https://github.com/xhang1108/rebind-me"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+
+[tool.setuptools.dynamic]
+version = { attr = "rebind_me.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

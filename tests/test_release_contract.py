@@ -1,14 +1,11 @@
-"""Release contract: the project and the npm package share one version.
+"""Release contract: one release version, held in two files.
 
 ``.github/workflows/release.yml`` reads the version from
-``plugin/package.json``, refuses to run when ``pyproject.toml`` disagrees, and
-tags it as ``v<version>``. Two package managers cannot read one number, so the
-number is written more than once; these tests fail on the commit that lets the
-copies drift instead of at publish time, when the result is a broken release
-rather than a red build.
-
-``rebind_me.__version__`` is the one that got missed: ``test_smoke`` only
-asserts its *shape*, so a stale value passed CI silently.
+``plugin/package.json`` (npm needs its own copy) and refuses to run when
+``rebind_me.__version__`` disagrees. ``pyproject.toml`` derives its version
+from that attribute rather than holding a third copy. These tests fail on the
+commit that lets the copies drift instead of at publish time, when the result
+is a broken release rather than a red build.
 """
 
 import json
@@ -23,13 +20,7 @@ PYPROJECT = ROOT / "pyproject.toml"
 PLUGIN_PACKAGE = ROOT / "plugin" / "package.json"
 
 SEMVER = re.compile(r"\d+\.\d+\.\d+$")
-
-
-def project_version() -> str:
-    text = PYPROJECT.read_text(encoding="utf-8")
-    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
-    assert match is not None, "pyproject.toml has no top-level version"
-    return match.group(1)
+DYNAMIC_VERSION = re.compile(r'^dynamic\s*=\s*\[[^\]]*"version"', re.MULTILINE)
 
 
 def plugin_version() -> str:
@@ -37,10 +28,15 @@ def plugin_version() -> str:
 
 
 class ReleaseVersionTest(unittest.TestCase):
-    def test_versions_match(self) -> None:
-        # A release reads plugin/package.json; the other two must already agree.
-        self.assertEqual(project_version(), plugin_version())
+    def test_runtime_and_npm_versions_match(self) -> None:
+        # A release reads plugin/package.json; __version__ must already agree.
         self.assertEqual(rebind_me.__version__, plugin_version())
+
+    def test_pyproject_derives_its_version(self) -> None:
+        # A static version here would be a third copy that nothing bumps.
+        text = PYPROJECT.read_text(encoding="utf-8")
+        self.assertRegex(text, DYNAMIC_VERSION)
+        self.assertNotRegex(text, r'^version\s*=\s*"')
 
     def test_plugin_version_is_semver(self) -> None:
         # The workflow tags ``v<version>`` and rejects anything that is not a

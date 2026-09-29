@@ -66,13 +66,10 @@ jobs:
               sys.exit(f"plugin/package.json version is not X.Y.Z: {version!r}")
 
           project = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
-          match = re.search(r'^version\s*=\s*"([^"]+)"', project, re.MULTILINE)
-          declared = match.group(1) if match else None
-          if declared != version:
-              sys.exit(
-                  f"pyproject.toml version {declared!r} does not match "
-                  f"plugin/package.json {version!r}"
-              )
+          if re.search(r'^version\s*=\s*"', project, re.MULTILINE):
+              sys.exit("pyproject.toml must not declare a static version")
+          if not re.search(r'^dynamic\s*=\s*\[[^\]]*"version"', project, re.MULTILINE):
+              sys.exit("pyproject.toml must derive its version from rebind_me.__version__")
 
           init = pathlib.Path("src/rebind_me/__init__.py").read_text(encoding="utf-8")
           attr = re.search(r'^__version__\s*=\s*"([^"]+)"', init, re.MULTILINE)
