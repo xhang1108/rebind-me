@@ -31,7 +31,9 @@ test("package metadata targets the OpenCode 2 plugin API", async () => {
     await readFile(new URL("../plugin/package.json", import.meta.url), "utf8"),
   );
   assert.equal(pkg.name, "rebind-me");
-  assert.equal(pkg.version, "0.4.1");
+  // The release workflow tags "v" + this version, so it must be a bare
+  // X.Y.Z. Keeping the two Python files in step is tests/test_release_contract.py.
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
   assert.equal(pkg.main, "index.ts");
   assert.equal(pkg.devDependencies["@opencode/plugin"], "2.0.15");
   assert.equal(pkg.devDependencies["@opencode-ai/plugin"], undefined);
