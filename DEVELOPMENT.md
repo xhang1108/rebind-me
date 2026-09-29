@@ -128,3 +128,31 @@ python -m rebind_me autostart status
 python -m rebind_me autostart enable
 python -m rebind_me plugin status
 ```
+
+## Releasing
+
+A release is one version bump. Edit **both** `pyproject.toml` and
+`plugin/package.json` to the same `X.Y.Z` (two package managers, so the number
+is written twice; `tests/test_release_contract.py` fails when they drift),
+commit, and push to `main`. `.github/workflows/release.yml` then:
+
+1. runs the Python and Node suites, and stops if either is red;
+2. refuses to run when the two versions disagree, or when `v<version>` is
+   already tagged (so an unrelated edit to `package.json` is a no-op);
+3. publishes `rebind-me@<version>` to npm;
+4. creates the tag `v<version>` and a GitHub Release with generated notes.
+
+npm is published **before** the tag and the Release, because a tag advertises a
+version; if the run dies in between, re-running detects the published version,
+skips the publish and finishes the tag and Release. `workflow_dispatch` runs the
+same job by hand.
+
+Authentication is npm **Trusted Publishing** (OIDC): the job takes
+`id-token: write` and `setup-node` is configured with `registry-url` but no
+`NODE_AUTH_TOKEN`, so npm authenticates with the OIDC token. There is no npm
+secret in the repository. This needs a one-time setup on npmjs.com: on the
+package's *Trusted Publisher* page, add a GitHub Actions publisher for
+repository `xhang1108/rebind-me` and workflow `release.yml` (leave the
+environment blank). Until that is configured the publish step fails with an
+authentication error; everything before it still runs.
+
