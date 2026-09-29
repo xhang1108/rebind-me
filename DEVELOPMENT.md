@@ -131,10 +131,14 @@ python -m rebind_me plugin status
 
 ## Releasing
 
-A release is one version bump. Edit **both** `pyproject.toml` and
-`plugin/package.json` to the same `X.Y.Z` (two package managers, so the number
-is written twice; `tests/test_release_contract.py` fails when they drift),
-commit, and push to `main`. `.github/workflows/release.yml` then:
+A release is one version bump. Write the same `X.Y.Z` into
+`plugin/package.json` (the release source of truth), `pyproject.toml` and
+`src/rebind_me/__init__.py` — two package managers and a runtime string cannot
+share one number, so it is written three times and
+`tests/test_release_contract.py` fails when the copies drift. Run `npm install`
+in `plugin/` so `package-lock.json` carries the new version too (it is inert
+metadata, but this repository keeps it in step). Then commit and push to `main`.
+`.github/workflows/release.yml` then:
 
 1. runs the Python and Node suites, and stops if either is red;
 2. refuses to run when the two versions disagree, or when `v<version>` is

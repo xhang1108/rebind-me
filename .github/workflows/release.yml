@@ -74,6 +74,15 @@ jobs:
                   f"plugin/package.json {version!r}"
               )
 
+          init = pathlib.Path("src/rebind_me/__init__.py").read_text(encoding="utf-8")
+          attr = re.search(r'^__version__\s*=\s*"([^"]+)"', init, re.MULTILINE)
+          declared = attr.group(1) if attr else None
+          if declared != version:
+              sys.exit(
+                  f"rebind_me.__version__ {declared!r} does not match "
+                  f"plugin/package.json {version!r}"
+              )
+
           tag = f"v{version}"
           exists = subprocess.run(
               ["git", "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"],
