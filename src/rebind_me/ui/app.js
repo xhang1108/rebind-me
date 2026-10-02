@@ -680,21 +680,21 @@ function renderEditor() {
         <span class="sub">A step is whatever you hold together; Add key chains one more step (max 2).</span>
       </div>
       <label class="sr-only" for="ed-sequence">Key sequence</label>
-      <textarea id="ed-sequence" name="sequence" data-role="sequence" class="hidden">${form.sequenceText}</textarea>
+      <textarea id="ed-sequence" name="sequence" data-role="sequence" class="hidden">${escapeHtml(form.sequenceText)}</textarea>
     </div>
     <div class="line" data-role="mouse-wrap"><label>Mouse / scroll <select id="ed-pointer" name="pointer" data-role="pointer">${pointerOptions(form.pointer)}</select></label></div>
     <div class="line" data-role="action-wrap">
       <label>Action <select id="ed-action" name="action" data-role="action">${options(ACTIONS, form.action)}</select></label>
-      <label data-role="process-wrap">Process <input id="ed-process" name="process" data-role="process" placeholder="process.exe" value="${form.process}" /></label>
+      <label data-role="process-wrap">Process <input id="ed-process" name="process" data-role="process" placeholder="process.exe" value="${escapeHtml(form.process)}" /></label>
       <div data-role="port-wrap" class="webhook-fields">
         <span class="sub">On press</span>
-        <input data-role="webhook-url" placeholder="http://127.0.0.1:8978/v1/dictation/start" value="${form.webhookUrl}" />
+        <input data-role="webhook-url" placeholder="http://127.0.0.1:8978/v1/dictation/start" value="${escapeHtml(form.webhookUrl)}" />
         <div class="webhook-row">
           <span class="sub">method</span>
           <select data-role="webhook-method">${options(["GET", "POST", "PUT", "DELETE", "PATCH"], form.webhookMethod)}</select>
         </div>
         <span class="sub">On release (optional)</span>
-        <input data-role="webhook-up-url" placeholder="http://127.0.0.1:8978/v1/dictation/stop" value="${form.webhookUpUrl}" />
+        <input data-role="webhook-up-url" placeholder="http://127.0.0.1:8978/v1/dictation/stop" value="${escapeHtml(form.webhookUpUrl)}" />
         <div class="webhook-row">
           <span class="sub">method</span>
           <select data-role="webhook-up-method">${options(["GET", "POST", "PUT", "DELETE", "PATCH"], form.webhookUpMethod)}</select>
