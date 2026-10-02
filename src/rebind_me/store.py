@@ -356,7 +356,7 @@ def validate_mapping_store(document: object) -> dict:
     mappings: dict[str, dict] = {}
     for name, entry in mappings_in.items():
         if name in RESERVED_INPUTS:
-            continue
+            raise RebindError("UNKNOWN_BUTTON", f"{name!r} is reserved and cannot be mapped")
         if name not in MAPPABLE_INPUTS:
             raise RebindError("UNKNOWN_BUTTON", f"unknown button: {name!r}")
         mappings[name] = _validate_mapping(entry)
@@ -364,7 +364,7 @@ def validate_mapping_store(document: object) -> dict:
     actions: dict[str, dict] = {}
     for name, entry in actions_in.items():
         if name in RESERVED_INPUTS:
-            continue
+            raise RebindError("UNKNOWN_BUTTON", f"{name!r} is reserved and cannot be mapped")
         if name not in MAPPABLE_INPUTS:
             raise RebindError("UNKNOWN_BUTTON", f"unknown button: {name!r}")
         if name in mappings:

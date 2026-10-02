@@ -36,14 +36,21 @@ class MappingValidationTest(unittest.TestCase):
         self.assertNotIn("mute", result["actions"])
         self.assertNotIn("mute", result["mappings"])
 
-    def test_reserved_mute_entries_are_dropped(self) -> None:
-        document = mapping_doc_with(
-            mappings={"mute": {"mode": "single", "sequence": [["KeyK"]]}},
-            actions={"mute": {"action": "focus-terminal"}},
-        )
-        result = validate_mapping_store(document)
-        self.assertNotIn("mute", result["mappings"])
-        self.assertNotIn("mute", result["actions"])
+    def test_reserved_mute_entries_are_rejected(self) -> None:
+        with self.assertRaises(RebindError) as ctx:
+            validate_mapping_store(
+                mapping_doc_with(
+                    mappings={"mute": {"mode": "single", "sequence": [["KeyK"]]}},
+                )
+            )
+        self.assertEqual(ctx.exception.code, "UNKNOWN_BUTTON")
+        with self.assertRaises(RebindError) as ctx:
+            validate_mapping_store(
+                mapping_doc_with(
+                    actions={"mute": {"action": "focus-terminal"}},
+                )
+            )
+        self.assertEqual(ctx.exception.code, "UNKNOWN_BUTTON")
 
     def test_unknown_button(self) -> None:
         document = mapping_doc_with(mappings={"nope": {"mode": "single", "mouse": "MouseLeft"}})

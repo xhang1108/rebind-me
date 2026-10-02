@@ -48,15 +48,12 @@ class LightingController:
     def __init__(self, lighting_settings: dict):
         self._settings = lighting_settings
         self._status = "idle"
-        self._manual_override = False
 
     def apply(self, lighting_settings: dict) -> None:
         self._settings = lighting_settings
 
     @property
     def mode(self) -> str:
-        if self._manual_override:
-            return "manual"
         return str(self._settings.get("mode", "status"))
 
     def set_status(self, state: str) -> None:
@@ -67,9 +64,6 @@ class LightingController:
     @property
     def status(self) -> str:
         return self._status
-
-    def set_manual_override(self, enabled: bool) -> None:
-        self._manual_override = bool(enabled)
 
     def _active_light(self) -> dict:
         if self.mode == "manual":

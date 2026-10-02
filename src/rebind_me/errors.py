@@ -14,9 +14,7 @@ ERROR_STATUS: dict[str, int] = {
     "INVALID_TRIGGER_MODE": 400,
     "MAPPING_LIMIT": 400,
     "PRESET_LIMIT": 400,
-    "INVALID_SPLIT_X": 400,
     # 401
-    "UNAUTHORIZED": 401,
     "INVALID_TOKEN": 401,
     "MISSING_TOKEN": 401,
     # 403
@@ -31,7 +29,6 @@ ERROR_STATUS: dict[str, int] = {
     # 409
     "STALE_STORE": 409,
     "CAPTURE_IN_PROGRESS": 409,
-    "DEVICE_BUSY": 409,
     # 422
     "INJECTION_FAILED": 422,
     # 500

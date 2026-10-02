@@ -266,48 +266,8 @@ def list_conflicting_processes() -> list[dict]:
     return conflicts
 
 
-def disable_usb_selective_suspend() -> bool:
-    """Attempt to disable USB selective suspend for connected DualSense USB devices via registry."""
-    import winreg
-    success = False
-    try:
-        # USB Power Management registry under ControlSet035/Enum/USB or similar
-        enum_path = r"SYSTEM\CurrentControlSet\Enum\USB"
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, enum_path, 0, winreg.KEY_READ) as usb_key:
-            i = 0
-            while True:
-                try:
-                    vid_pid_key_name = winreg.EnumKey(usb_key, i)
-                    i += 1
-                    if "vid_054c" not in vid_pid_key_name.lower():
-                        continue
-                    vid_path = f"{enum_path}\\{vid_pid_key_name}"
-                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, vid_path, 0, winreg.KEY_READ) as inst_key:
-                        j = 0
-                        while True:
-                            try:
-                                inst_name = winreg.EnumKey(inst_key, j)
-                                j += 1
-                                param_path = f"{vid_path}\\{inst_name}\\Device Parameters"
-                                try:
-                                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, param_path, 0, winreg.KEY_SET_VALUE) as p_key:
-                                        winreg.SetValueEx(p_key, "SelectiveSuspendEnabled", 0, winreg.REG_DWORD, 0)
-                                        winreg.SetValueEx(p_key, "PnPCapabilities", 0, winreg.REG_DWORD, 0x00000010) # USB_NO_SELECTIVE_SUSPEND / CONFIGFLAG_NO_POWER_SUSPEND
-                                        success = True
-                                except FileNotFoundError:
-                                    pass
-                            except OSError:
-                                break
-                except OSError:
-                    break
-    except Exception:
-        pass
-    return success
-
-
 __all__ = [
     "CONFLICTING_PROCESS_NAMES",
-    "disable_usb_selective_suspend",
     "find_device_occupant",
     "list_conflicting_processes",
 ]

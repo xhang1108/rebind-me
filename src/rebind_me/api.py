@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import secrets
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -118,7 +119,6 @@ class ApiApp:
         supplied = request.headers.get(TOKEN_HEADER) or request.headers.get(TOKEN_HEADER.lower())
         if supplied is None:
             raise RebindError("MISSING_TOKEN", "X-Bridge-Token is required", 401)
-        import secrets
 
         if not secrets.compare_digest(str(supplied), str(self.token)):
             raise RebindError("INVALID_TOKEN", "token does not match", 401)

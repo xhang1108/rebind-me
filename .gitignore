@@ -32,8 +32,10 @@ Desktop.ini
 # Local
 *.local
 
-# Docs
-docs/
+# Docs (local-only; API schema is tracked)
+docs/**
+!docs/api/
+!docs/api/README.md
 
 # Tooling output
 .openchamber/

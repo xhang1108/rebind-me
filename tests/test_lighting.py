@@ -58,9 +58,10 @@ class LightingControllerTest(unittest.TestCase):
         self.assertEqual((dark.red, dark.green, dark.blue), (0, 0, 0))
         self.assertEqual((bright.red, bright.green, bright.blue), (255, 0, 0))
 
-    def test_manual_override(self) -> None:
-        controller = lighting.LightingController(lighting_settings())
-        controller.set_manual_override(True)
+    def test_manual_mode(self) -> None:
+        settings = lighting_settings()
+        settings["mode"] = "manual"
+        controller = lighting.LightingController(settings)
         frame = controller.frame(0.0)
         self.assertEqual((frame.red, frame.green, frame.blue), (0, 0, 255))
 
