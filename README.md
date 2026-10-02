@@ -86,9 +86,9 @@ mouse button, or a scroll direction. A mapping picks one of four modes:
 | Mode | Behaviour |
 |---|---|
 | `single` | Fires once per press. |
+| `repeat` | Fires repeatedly, either while held or until you stop it — see below. |
 | `hold` | Holds the target down while you hold the button, releases on let-go. |
 | `toggle` | Holds the target down until you press the button again. |
-| `repeat` | Fires repeatedly, either while held or until you stop it — see below. |
 
 `hold` and `toggle` press the target and leave it pressed, so they are for keys
 and mouse buttons. A scroll has no pressed state to hold down: in `hold` or
