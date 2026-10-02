@@ -43,3 +43,7 @@ Or on error:
 | POST | `/api/shutdown` | Token | Shutdown application |
 
 *Note: PUT requests require `baseVersion` in the body.*
+
+Auth column: **UI** endpoints are same-origin browser calls guarded by an
+Origin/Host allow-list; **Token** endpoints require the `X-Bridge-Token`
+header.

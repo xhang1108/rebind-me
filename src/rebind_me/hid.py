@@ -4,8 +4,9 @@ Standard library only, via ``ctypes``. The interface is selected by HID caps
 (``OutputReportByteLength == 48`` and ``InputReportByteLength >= 11``), never
 by report ID.
 
-This stage provides blocking reads, which is all the fixture recorder needs.
-Overlapped / non-blocking reads and reconnect handling land in stage 3.
+This module provides overlapped, interruptible reads, device enumeration by
+HID caps, and reconnect handling; the fixture recorder uses the blocking
+interface.
 """
 
 from __future__ import annotations

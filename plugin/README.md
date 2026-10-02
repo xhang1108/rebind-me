@@ -1,6 +1,6 @@
 # rebind-me
 
-The [OpenCode 2](https://github.com/xhang1108/rebind-me) plugin for **Rebind Me**.
+The OpenCode 2 plugin for **Rebind Me**.
 It forwards the public OpenCode 2 session event stream to the local Rebind Me
 bridge, so the DualSense light — and the bridge's focus-terminal action — follow
 what the agent is doing.
