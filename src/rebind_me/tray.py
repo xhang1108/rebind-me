@@ -281,9 +281,17 @@ class TrayApp:
             self._stop.wait(POLL_SECONDS)
 
     def _sample(self) -> None:
+        self._refresh_client()
         snapshot = probe_state(self.client, self.task)
         with self._lock:
             self._snapshot = snapshot
+
+    def _refresh_client(self) -> None:
+        """Re-read port/token so a UI-side port change needs no tray restart."""
+        self.client.base_url = f"http://127.0.0.1:{read_port(self.root)}"
+        token = read_token(self.root)
+        if token is not None:
+            self.client.token = token
 
     def _snapshot_copy(self) -> dict:
         with self._lock:
@@ -308,6 +316,7 @@ class TrayApp:
 
     def _on_select(self, item_id: int) -> None:
         try:
+            self._refresh_client()
             if item_id == START_ID:
                 self._run_action("start", start_bridge)
             elif item_id == STOP_ID:
@@ -325,6 +334,7 @@ class TrayApp:
                 self._log.warning("tray action %s failed: %s", item_id, error)
 
     def _open_ui(self) -> None:
+        self._refresh_client()
         webbrowser.open(self.client.base_url + "/")
 
     def _run_action(self, label: str, action) -> None:

@@ -14,6 +14,7 @@ from rebind_me.tray import (
     START_ID,
     STOP_ID,
     BridgeClient,
+    TrayApp,
     autostart_targets,
     build_menu,
     probe_state,
@@ -388,6 +389,62 @@ class RuntimeFileTest(unittest.TestCase):
                 json.dumps({"port": 999999}), encoding="utf-8"
             )
             self.assertEqual(read_port(root), 4173)
+
+
+class TrayRefreshTest(unittest.TestCase):
+    class _Task:
+        def exists(self):
+            return True
+
+    def _app(self, root: Path) -> TrayApp:
+        app = TrayApp(root)
+        app.task = self._Task()
+        return app
+
+    def _write_settings(self, root: Path, port: int) -> None:
+        (root / SETTINGS_FILENAME).write_text(
+            json.dumps({"port": port}), encoding="utf-8"
+        )
+
+    def test_refresh_picks_up_new_port(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_settings(root, 5000)
+            app = self._app(root)
+            self.assertTrue(app.client.base_url.endswith(":5000"))
+            self._write_settings(root, 5001)
+            app._refresh_client()
+            self.assertTrue(app.client.base_url.endswith(":5001"))
+
+    def test_refresh_updates_token_when_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_settings(root, 5000)
+            app = self._app(root)
+            (root / TOKEN_FILENAME).write_text("tok1\n", encoding="utf-8")
+            app._refresh_client()
+            self.assertEqual(app.client.token, "tok1")
+
+    def test_refresh_keeps_token_when_file_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_settings(root, 5000)
+            (root / TOKEN_FILENAME).write_text("tok1\n", encoding="utf-8")
+            app = self._app(root)
+            self.assertEqual(app.client.token, "tok1")
+            (root / TOKEN_FILENAME).unlink()
+            app._refresh_client()
+            self.assertEqual(app.client.token, "tok1")
+
+    def test_sample_rereads_port_before_poll(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_settings(root, 5000)
+            app = self._app(root)
+            self._write_settings(root, 59999)
+            app._sample()
+            self.assertTrue(app.client.base_url.endswith(":59999"))
+            self.assertFalse(app._snapshot_copy()["online"])
 
 
 if __name__ == "__main__":
