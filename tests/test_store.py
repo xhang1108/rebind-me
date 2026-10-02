@@ -3,6 +3,7 @@
 import json
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
 
 from rebind_me import store
@@ -620,7 +621,7 @@ class MappingMigrationTest(unittest.TestCase):
             self.path,
             validate_mapping_store,
             DEFAULT_MAPPING_STORE,
-            load_kwargs={"strict": False},
+            load_validator=partial(validate_mapping_store, strict=False),
         )
         snapshot = store_obj.load()
         self.assertIn("cross", snapshot["mappings"])
@@ -631,7 +632,7 @@ class MappingMigrationTest(unittest.TestCase):
             self.path,
             validate_mapping_store,
             DEFAULT_MAPPING_STORE,
-            load_kwargs={"strict": False},
+            load_validator=partial(validate_mapping_store, strict=False),
         )
         store_obj.load()
         with self.assertRaises(RebindError) as ctx:
@@ -669,7 +670,10 @@ class MappingMigrationTest(unittest.TestCase):
             encoding="utf-8",
         )
         store_obj = JsonStore(
-            path, validate_presets, DEFAULT_PRESETS, load_kwargs={"strict": False}
+            path,
+            validate_presets,
+            DEFAULT_PRESETS,
+            load_validator=partial(validate_presets, strict=False),
         )
         preset = store_obj.load()["presets"]["old"]
         self.assertNotIn("mute", preset["mappings"])

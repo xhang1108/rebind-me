@@ -24,12 +24,75 @@ _log = logging.getLogger(__name__)
 
 # Occupant diagnosis must never run on the HID thread: one wedged kernel
 # handle can block DuplicateHandle / GetFinalPathNameByHandleW past any
-# same-thread deadline. Diagnosis runs single-flight in the background and
-# the reconnect loop attaches the last known result.
+# same-thread deadline.
 OCCUPANT_CACHE_SECONDS = 30.0
-_occupant_cache: dict[str, tuple[float, dict | None]] = {}
-_occupant_inflight: set[str] = set()
-_occupant_lock = threading.Lock()
+
+
+class OccupantTracker:
+    """Single-flight background device-occupant diagnosis with a bounded cache.
+
+    State lives on the instance (not globals), so each test can use a fresh
+    tracker. Stale entries are pruned on insert, so the cache never grows
+    past the distinct device paths seen recently. The first busy poll
+    reports ``(None, [])``; the populated result arrives on a later poll.
+    """
+
+    def __init__(
+        self,
+        cache_seconds: float = OCCUPANT_CACHE_SECONDS,
+        scan=find_device_occupant,
+        list_conflicts=list_conflicting_processes,
+    ):
+        self._cache_seconds = cache_seconds
+        self._scan = scan
+        self._list_conflicts = list_conflicts
+        self._cache: dict[str, tuple[float, tuple[dict | None, list]]] = {}
+        self._inflight: set[str] = set()
+        self._lock = threading.Lock()
+
+    def diagnose(self, device_path: str) -> tuple[dict | None, list]:
+        """Return the cached ``(occupant, conflicts)`` without blocking.
+
+        Kicks off a single-flight background scan when the cache is missing
+        or stale; the next reconnect poll picks up the result. A scan that
+        wedges in the kernel stalls at most one daemon worker, never HID.
+        """
+        now = time.monotonic()
+        with self._lock:
+            cached = self._cache.get(device_path)
+            if cached is not None and now - cached[0] < self._cache_seconds:
+                return cached[1]
+            if device_path in self._inflight:
+                return cached[1] if cached is not None else (None, [])
+            self._inflight.add(device_path)
+
+        def work() -> None:
+            try:
+                occupant = self._scan(device_path)
+            except Exception as error:  # noqa: BLE001 - diagnosis must not crash the worker
+                _log.warning("occupant scan failed for %s: %s", device_path, error)
+                occupant = None
+            try:
+                conflicts = self._list_conflicts()
+            except Exception as error:  # noqa: BLE001 - same as above
+                _log.warning("conflicting-process scan failed: %s", error)
+                conflicts = []
+            done_at = time.monotonic()
+            with self._lock:
+                self._cache = {
+                    path: entry
+                    for path, entry in self._cache.items()
+                    if done_at - entry[0] < self._cache_seconds
+                }
+                self._cache[device_path] = (done_at, (occupant, conflicts))
+                self._inflight.discard(device_path)
+
+        threading.Thread(target=work, name="rebind-occupant", daemon=True).start()
+        with self._lock:
+            return cached[1] if cached is not None else (None, [])
+
+
+_occupant_tracker = OccupantTracker()
 
 DUALSENSE_VENDOR_ID = 0x054C
 DUALSENSE_PRODUCT_ID = 0x0CE6
@@ -532,37 +595,6 @@ class HidLoop:
                 pass
 
 
-def _diagnose_occupant_async(device_path: str) -> dict | None:
-    """Return the cached device occupant without blocking.
-
-    Kicks off a single-flight background scan when the cache is missing or
-    stale; the next reconnect poll picks up the result. A scan that wedges
-    in the kernel stalls at most one daemon worker, never the HID loop.
-    """
-    now = time.monotonic()
-    with _occupant_lock:
-        cached = _occupant_cache.get(device_path)
-        if cached is not None and now - cached[0] < OCCUPANT_CACHE_SECONDS:
-            return cached[1]
-        if device_path in _occupant_inflight:
-            return cached[1] if cached is not None else None
-        _occupant_inflight.add(device_path)
-
-    def work() -> None:
-        try:
-            result = find_device_occupant(device_path)
-        except Exception as error:  # noqa: BLE001 - diagnosis must not crash the worker
-            _log.warning("occupant scan failed for %s: %s", device_path, error)
-            result = None
-        with _occupant_lock:
-            _occupant_cache[device_path] = (time.monotonic(), result)
-            _occupant_inflight.discard(device_path)
-
-    threading.Thread(target=work, name="rebind-occupant", daemon=True).start()
-    with _occupant_lock:
-        return cached[1] if cached is not None else None
-
-
 def open_first_device() -> WindowsHidDevice:
     """Provider for :class:`HidLoop`; re-enumerates on every call."""
     interface = find_dualsense()
@@ -573,8 +605,7 @@ def open_first_device() -> WindowsHidDevice:
     except OSError as error:
         winerror = getattr(error, "winerror", None) or error.errno
         if winerror in (ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION):
-            error.occupant = _diagnose_occupant_async(interface.path)
-            error.conflicts = list_conflicting_processes()
+            error.occupant, error.conflicts = _occupant_tracker.diagnose(interface.path)
         raise
 
 
@@ -583,6 +614,7 @@ __all__ = [
     "DUALSENSE_VENDOR_ID",
     "HidInterface",
     "HidLoop",
+    "OccupantTracker",
     "WindowsHidDevice",
     "close_device",
     "enumerate_interfaces",

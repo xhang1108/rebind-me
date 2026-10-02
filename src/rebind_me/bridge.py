@@ -10,6 +10,7 @@ import ctypes
 import os
 import threading
 import time
+from functools import partial
 from pathlib import Path
 
 from .actions import ActionRunner
@@ -100,7 +101,7 @@ class Bridge:
             self.root / MAPPING_STORE_FILENAME,
             validate_mapping_store,
             DEFAULT_MAPPING_STORE,
-            load_kwargs={"strict": False},
+            load_validator=partial(validate_mapping_store, strict=False),
         )
         self._settings = JsonStore(
             self.root / SETTINGS_FILENAME, validate_settings, DEFAULT_SETTINGS
@@ -109,7 +110,7 @@ class Bridge:
             self.root / PRESETS_FILENAME,
             validate_presets,
             DEFAULT_PRESETS,
-            load_kwargs={"strict": False},
+            load_validator=partial(validate_presets, strict=False),
         )
         self.token = ""
         self.output = SendInputOutput()

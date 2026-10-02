@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-from .errors import RebindError
+from .errors import RebindError, to_float, to_int
 from .keys import MOUSE_BUTTON_CODES, SCROLL_CODES, is_keyboard_code
 from .protocol import BUTTON_NAMES
 from .triggers import normalize_triggers
@@ -166,20 +166,6 @@ def _schema(message: str) -> RebindError:
     return RebindError("SCHEMA_ERROR", message)
 
 
-def _to_int(value: object, message: str) -> int:
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (ValueError, TypeError):
-        raise _schema(message)
-
-
-def _to_float(value: object, message: str) -> float:
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (ValueError, TypeError):
-        raise _schema(message)
-
-
 def _validate_sequence(value: object) -> list[list[str]]:
     if not isinstance(value, list):
         raise _schema("sequence must be a list of segments")
@@ -206,8 +192,8 @@ def _validate_repeat_window(value: object) -> dict[str, int]:
     """Validate the optional random gap window of a repeat mapping."""
     if not isinstance(value, dict):
         raise _schema("repeat.random must be an object")
-    low = _to_int(value.get("minMs", REPEAT_MIN_MS), "repeat.random.minMs must be an integer")
-    high = _to_int(value.get("maxMs", REPEAT_MAX_MS), "repeat.random.maxMs must be an integer")
+    low = to_int(value.get("minMs", REPEAT_MIN_MS), "repeat.random.minMs must be an integer")
+    high = to_int(value.get("maxMs", REPEAT_MAX_MS), "repeat.random.maxMs must be an integer")
     if not REPEAT_MIN_MS <= low <= REPEAT_MAX_MS:
         raise _schema(f"repeat.random.minMs must be {REPEAT_MIN_MS}..{REPEAT_MAX_MS}")
     if not REPEAT_MIN_MS <= high <= REPEAT_MAX_MS:
@@ -220,8 +206,8 @@ def _validate_repeat_window(value: object) -> dict[str, int]:
 def _validate_repeat(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise _schema("repeat must be an object")
-    delay = _to_int(value.get("delayMs", DEFAULT_REPEAT["delayMs"]), "repeat.delayMs must be an integer")
-    interval = _to_int(value.get("intervalMs", DEFAULT_REPEAT["intervalMs"]), "repeat.intervalMs must be an integer")
+    delay = to_int(value.get("delayMs", DEFAULT_REPEAT["delayMs"]), "repeat.delayMs must be an integer")
+    interval = to_int(value.get("intervalMs", DEFAULT_REPEAT["intervalMs"]), "repeat.intervalMs must be an integer")
     if not REPEAT_MIN_MS <= delay <= REPEAT_MAX_MS:
         raise _schema(f"repeat.delayMs must be {REPEAT_MIN_MS}..{REPEAT_MAX_MS}")
     if not REPEAT_MIN_MS <= interval <= REPEAT_MAX_MS:
@@ -346,7 +332,7 @@ def _validate_touchpad(value: object) -> dict:
     if not isinstance(value, dict):
         raise _schema("touchpad must be an object")
 
-    sensitivity = _to_float(value.get("sensitivity", 1.5), "touchpad.sensitivity must be a number")
+    sensitivity = to_float(value.get("sensitivity", 1.5), "touchpad.sensitivity must be a number")
     if not 0.1 <= sensitivity <= 5.0:
         raise _schema("touchpad.sensitivity must be 0.1..5.0")
 
@@ -365,7 +351,7 @@ def validate_mapping_store(document: object, *, strict: bool = True) -> dict:
     """
     if not isinstance(document, dict):
         raise _schema("mapping store must be an object")
-    version = _to_int(
+    version = to_int(
         document.get("version", 0),
         f"unsupported mapping store version: {document.get('version')!r}",
     )
@@ -449,7 +435,7 @@ def _validate_preset(body: object, *, strict: bool = True) -> dict:
 def validate_presets(document: object, *, strict: bool = True) -> dict:
     if not isinstance(document, dict):
         raise _schema("presets store must be an object")
-    version = _to_int(
+    version = to_int(
         document.get("version", 0),
         f"unsupported presets version: {document.get('version')!r}",
     )
@@ -477,18 +463,18 @@ def _validate_light(value: object) -> dict:
     color = value.get("color", [0, 0, 0])
     if not isinstance(color, list) or len(color) != 3:
         raise _schema("light color must be [r, g, b]")
-    rgb = [_clamp(_to_int(channel, "light color channels must be integers"), 0, 255) for channel in color]
+    rgb = [_clamp(to_int(channel, "light color channels must be integers"), 0, 255) for channel in color]
     effect = str(value.get("effect", "static")).strip().lower()
     if effect not in _EFFECTS:
         raise _schema(f"unknown light effect: {effect!r}")
-    speed = _clamp(_to_int(value.get("speed", 3), "light speed must be an integer"), 1, 5)
+    speed = _clamp(to_int(value.get("speed", 3), "light speed must be an integer"), 1, 5)
     return {"color": rgb, "effect": effect, "speed": speed}
 
 
 def validate_settings(document: object) -> dict:
     if not isinstance(document, dict):
         raise _schema("settings must be an object")
-    version = _to_int(
+    version = to_int(
         document.get("version", 0),
         f"unsupported settings version: {document.get('version')!r}",
     )
@@ -518,9 +504,9 @@ def validate_settings(document: object) -> dict:
     mode = str(lighting_in.get("mode", "status"))
     if mode not in ("status", "manual"):
         raise _schema(f"unknown lighting.mode: {mode!r}")
-    brightness = _clamp(_to_int(lighting_in.get("brightness", 100), "lighting.brightness must be an integer"), 0, 100)
-    player_leds = _clamp(_to_int(lighting_in.get("playerLeds", 0), "lighting.playerLeds must be an integer"), 0, 0x1F)
-    auto_mute_seconds = _clamp(_to_int(lighting_in.get("autoMuteSeconds", 60), "lighting.autoMuteSeconds must be an integer"), 0, 3600)
+    brightness = _clamp(to_int(lighting_in.get("brightness", 100), "lighting.brightness must be an integer"), 0, 100)
+    player_leds = _clamp(to_int(lighting_in.get("playerLeds", 0), "lighting.playerLeds must be an integer"), 0, 0x1F)
+    auto_mute_seconds = _clamp(to_int(lighting_in.get("autoMuteSeconds", 60), "lighting.autoMuteSeconds must be an integer"), 0, 3600)
     mic_button = str(lighting_in.get("micButton", "") or "").strip()
     if mic_button and (mic_button in RESERVED_INPUTS or mic_button not in INPUT_NAMES):
         raise RebindError("UNKNOWN_BUTTON", f"unknown mic button: {mic_button!r}")
@@ -535,7 +521,7 @@ def validate_settings(document: object) -> dict:
     }
     manual = _validate_light(lighting_in.get("manual", {}))
 
-    port = _to_int(document.get("port", DEFAULT_PORT), "port must be an integer")
+    port = to_int(document.get("port", DEFAULT_PORT), "port must be an integer")
     if not 1 <= port <= 65535:
         raise _schema("port must be 1..65535")
     autostart_in = document.get("autostart", {})
@@ -592,22 +578,23 @@ def load_or_create_token(path: Path) -> str:
 class JsonStore:
     """A validated JSON document with atomic writes and a baseVersion lock.
 
-    ``load_kwargs`` are passed to the validator on load only (e.g. a tolerant
-    migration mode); ``replace`` always validates strictly so bad writes get
-    a 4xx instead of silently landing on disk.
+    ``load_validator`` is used on load only (e.g. a tolerant migration
+    wrapper built with :func:`functools.partial`); ``replace`` always uses
+    the strict ``validator`` so bad writes get a 4xx instead of silently
+    landing on disk.
     """
 
     def __init__(
         self,
         path: Path,
-        validator: Callable[..., dict],
+        validator: Callable[[object], dict],
         default: dict,
-        load_kwargs: dict | None = None,
+        load_validator: Callable[[object], dict] | None = None,
     ):
         self.path = path
         self.validator = validator
         self.default = default
-        self._load_kwargs = dict(load_kwargs or {})
+        self._load_validator = load_validator or validator
         self._lock = threading.RLock()
         self._document: dict = copy.deepcopy(default)
         self._base_version = 1
@@ -618,7 +605,7 @@ class JsonStore:
             if self.path.exists():
                 try:
                     raw = json.loads(self.path.read_text(encoding="utf-8"))
-                    document = self.validator(raw, **self._load_kwargs)
+                    document = self._load_validator(raw)
                     version = int(raw.get("baseVersion", 1))
                 except (OSError, ValueError, RebindError):
                     document = self.validator(copy.deepcopy(self.default))

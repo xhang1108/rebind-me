@@ -7,7 +7,7 @@ from unittest import mock
 
 from rebind_me import hid as hid_mod
 from rebind_me.errors import RebindError
-from rebind_me.hid import HidLoop, _diagnose_occupant_async, open_first_device
+from rebind_me.hid import HidLoop, open_first_device
 
 
 @dataclass
@@ -149,88 +149,85 @@ class RunGuardTest(unittest.TestCase):
             loop.stop()
 
 
-class OccupantAsyncTest(unittest.TestCase):
-    def setUp(self) -> None:
-        hid_mod._occupant_cache.clear()
-        hid_mod._occupant_inflight.clear()
-        self._cache_seconds = hid_mod.OCCUPANT_CACHE_SECONDS
+class OccupantTrackerTest(unittest.TestCase):
+    def _tracker(self, **kwargs) -> hid_mod.OccupantTracker:
+        kwargs.setdefault("list_conflicts", lambda: ["steam.exe"])
+        return hid_mod.OccupantTracker(**kwargs)
 
-    def tearDown(self) -> None:
-        hid_mod.OCCUPANT_CACHE_SECONDS = self._cache_seconds
-        hid_mod._occupant_cache.clear()
-        hid_mod._occupant_inflight.clear()
-
-    def _wait_for_cache(self, path: str, timeout: float = 5.0) -> None:
+    def _wait_for(self, condition, timeout: float = 5.0) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            with hid_mod._occupant_lock:
-                if path in hid_mod._occupant_cache:
-                    return
+            if condition():
+                return
             time.sleep(0.005)
-        self.fail("occupant background scan did not finish")
+        self.fail("background occupant scan did not finish")
 
-    def test_first_call_returns_none_and_fills_cache(self) -> None:
+    def test_first_call_returns_empty_and_fills_cache(self) -> None:
         calls: list = []
-        result = {"pid": 7, "name": "steam.exe", "path": "C:\\s"}
-        with mock.patch.object(
-            hid_mod, "find_device_occupant", side_effect=lambda p: calls.append(p) or result
-        ):
-            self.assertIsNone(_diagnose_occupant_async("fake-path"))
-            self._wait_for_cache("fake-path")
-            self.assertEqual(_diagnose_occupant_async("fake-path"), result)
-            self.assertEqual(len(calls), 1)
+        result = {"pid": 7, "name": "steam.exe", "path": "C:/s"}
+        tracker = self._tracker(scan=lambda p: calls.append(p) or result)
+        self.assertEqual(tracker.diagnose("fake-path"), (None, []))
+        self._wait_for(lambda: len(calls) == 1 and "fake-path" not in tracker._inflight)
+        self.assertEqual(tracker.diagnose("fake-path"), (result, ["steam.exe"]))
+        self.assertEqual(len(calls), 1)
 
     def test_stale_cache_triggers_a_rescan(self) -> None:
-        hid_mod.OCCUPANT_CACHE_SECONDS = 0
-        with mock.patch.object(
-            hid_mod, "find_device_occupant", return_value=None
-        ) as scan:
-            _diagnose_occupant_async("fake-path")
-            self._wait_for_cache("fake-path")
-            _diagnose_occupant_async("fake-path")
-            deadline = time.monotonic() + 5.0
-            while scan.call_count < 2 and time.monotonic() < deadline:
-                time.sleep(0.005)
-            self.assertEqual(scan.call_count, 2)
+        calls: list = []
+        tracker = self._tracker(cache_seconds=0, scan=lambda p: calls.append(p) or None)
+        tracker.diagnose("fake-path")
+        self._wait_for(lambda: len(calls) == 1 and "fake-path" not in tracker._inflight)
+        tracker.diagnose("fake-path")
+        self._wait_for(lambda: len(calls) == 2 and "fake-path" not in tracker._inflight)
+        self.assertEqual(len(calls), 2)
 
-    def test_failed_scan_caches_none_and_releases_inflight(self) -> None:
-        with mock.patch.object(
-            hid_mod, "find_device_occupant", side_effect=OSError("wedged")
-        ) as scan:
-            self.assertIsNone(_diagnose_occupant_async("fake-path"))
-            self._wait_for_cache("fake-path")
-            with hid_mod._occupant_lock:
-                self.assertNotIn("fake-path", hid_mod._occupant_inflight)
-            # A fresh negative result is served from cache: no rescan.
-            self.assertIsNone(_diagnose_occupant_async("fake-path"))
-            self.assertEqual(scan.call_count, 1)
-            # Once stale, the next poll retries the scan.
-            hid_mod.OCCUPANT_CACHE_SECONDS = 0
-            self.assertIsNone(_diagnose_occupant_async("fake-path"))
-            deadline = time.monotonic() + 5.0
-            while scan.call_count < 2 and time.monotonic() < deadline:
-                time.sleep(0.005)
-            self.assertEqual(scan.call_count, 2)
+    def test_failed_scan_caches_empty_and_releases_inflight(self) -> None:
+        calls: list = []
 
-    def test_busy_open_attaches_occupant_without_blocking(self) -> None:
+        def scan(path: str):
+            calls.append(path)
+            raise OSError("wedged")
+
+        tracker = self._tracker(scan=scan)
+        # Cache cold: nothing yet, not even conflicts.
+        self.assertEqual(tracker.diagnose("fake-path"), (None, []))
+        self._wait_for(lambda: "fake-path" in tracker._cache)
+        with tracker._lock:
+            self.assertNotIn("fake-path", tracker._inflight)
+        # A fresh negative result is served from cache: no rescan.
+        # The occupant scan failed but conflicts were still collected.
+        self.assertEqual(tracker.diagnose("fake-path"), (None, ["steam.exe"]))
+        self.assertEqual(len(calls), 1)
+
+    def test_busy_open_attaches_cached_diagnosis(self) -> None:
         class BusyDevice:
             def __init__(self, interface):
                 raise busy_error()
 
+        tracker = self._tracker(scan=lambda p: {"pid": 9})
         with (
             mock.patch.object(hid_mod, "find_dualsense", return_value=FakeInterface()),
             mock.patch.object(hid_mod, "WindowsHidDevice", BusyDevice),
-            mock.patch.object(
-                hid_mod, "_diagnose_occupant_async", return_value={"pid": 9}
-            ) as diagnose,
+            mock.patch.object(hid_mod, "_occupant_tracker", tracker),
+        ):
+            try:
+                open_first_device()
+                self.fail("expected OSError")
+            except OSError as error:
+                # Cache cold on first sighting; populated on the next poll.
+                self.assertIsNone(error.occupant)
+                self.assertEqual(error.conflicts, [])
+        self._wait_for(lambda: "fake" in tracker._cache)
+        with (
+            mock.patch.object(hid_mod, "find_dualsense", return_value=FakeInterface()),
+            mock.patch.object(hid_mod, "WindowsHidDevice", BusyDevice),
+            mock.patch.object(hid_mod, "_occupant_tracker", tracker),
         ):
             try:
                 open_first_device()
                 self.fail("expected OSError")
             except OSError as error:
                 self.assertEqual(error.occupant, {"pid": 9})
-                self.assertIsInstance(error.conflicts, list)
-        self.assertEqual(diagnose.call_count, 1)
+                self.assertEqual(error.conflicts, ["steam.exe"])
 
 
 class WriteTest(unittest.TestCase):

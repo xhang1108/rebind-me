@@ -49,4 +49,24 @@ class RebindError(Exception):
         self.status = status if status is not None else ERROR_STATUS.get(code, 500)
 
 
-__all__ = ["ERROR_STATUS", "RebindError"]
+def to_int(value: object, message: str) -> int:
+    """Coerce ``value`` to ``int``, raising ``SCHEMA_ERROR`` on garbage.
+
+    Validators must never leak a native ``ValueError`` / ``TypeError``: those
+    bypass the API error envelope and surface as 500 instead of 400.
+    """
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        raise RebindError("SCHEMA_ERROR", message)
+
+
+def to_float(value: object, message: str) -> float:
+    """Coerce ``value`` to ``float``; see :func:`to_int`."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        raise RebindError("SCHEMA_ERROR", message)
+
+
+__all__ = ["ERROR_STATUS", "RebindError", "to_float", "to_int"]
