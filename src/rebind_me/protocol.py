@@ -150,7 +150,11 @@ def decode_input_report(report: bytes) -> InputState:
     misc = report[IN_MISC]
     system = report[IN_SYSTEM]
 
-    buttons: set[str] = set(_DPAD_MAP[face_dpad & 0x0F])
+    # The hat nibble is 0..15 but only 0..8 are defined; reserved values
+    # decode as neutral rather than raising, so a faulty device cannot
+    # inject phantom directions or kill the HID loop (see HidLoop._run).
+    dpad_value = face_dpad & 0x0F
+    buttons: set[str] = set(_DPAD_MAP[dpad_value] if dpad_value < len(_DPAD_MAP) else ())
     for bit, name in enumerate(FACE_BUTTONS, start=4):
         if face_dpad & (1 << bit):
             buttons.add(name)

@@ -261,7 +261,7 @@ class Bridge:
             return
         try:
             state = decode_input_report(report)
-        except ValueError:
+        except (ValueError, IndexError, KeyError):
             return
 
         now = time.monotonic()

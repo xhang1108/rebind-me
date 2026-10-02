@@ -11,12 +11,15 @@ Overlapped / non-blocking reads and reconnect handling land in stage 3.
 from __future__ import annotations
 
 import ctypes
+import logging
 import threading
 from ctypes import wintypes
 from dataclasses import dataclass
 
 from .errors import RebindError
 from .winapi.occupant import find_device_occupant, list_conflicting_processes
+
+_log = logging.getLogger(__name__)
 
 DUALSENSE_VENDOR_ID = 0x054C
 DUALSENSE_PRODUCT_ID = 0x0CE6
@@ -491,7 +494,10 @@ class HidLoop:
     def _run(self) -> None:
         while not self._stop.is_set():
             before = self.device
-            self.poll()
+            try:
+                self.poll()
+            except Exception as error:  # noqa: BLE001 - one bad report must not kill the loop
+                _log.exception("hid poll failed: %s", error)
             if self.device is None:
                 self._stop.wait(self._retry_seconds)
             elif self.device is before is not None:

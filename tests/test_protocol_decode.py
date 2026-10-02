@@ -97,6 +97,14 @@ class DecodeButtonsTest(unittest.TestCase):
             report[p.IN_FACE_DPAD] = value
             self.assertEqual(p.decode_input_report(bytes(report)).buttons, buttons)
 
+    def test_reserved_dpad_values_decode_as_neutral(self) -> None:
+        for value in range(9, 16):
+            report = make_report()
+            report[p.IN_FACE_DPAD] = value
+            self.assertEqual(
+                p.decode_input_report(bytes(report)).buttons, frozenset()
+            )
+
     def test_all_nineteen_button_names_are_unique_and_known(self) -> None:
         self.assertEqual(len(p.BUTTON_NAMES), 19)
         self.assertEqual(len(set(p.BUTTON_NAMES)), 19)

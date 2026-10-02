@@ -124,6 +124,10 @@ class BridgeTest(unittest.TestCase):
         self.bridge._on_report(input_report(face=0x08), None)
         self.assertEqual(self.bridge.status()["inputs"], [])
 
+    def test_reserved_dpad_value_is_ignored(self) -> None:
+        self.bridge._on_report(input_report(face=0x09), None)  # must not raise
+        self.assertEqual(self.bridge.status()["inputs"], [])
+
     def test_status_reports_touchpad_zone(self) -> None:
         left = bytearray(input_report(system=0x02))
         left[33] = 0x00  # active contact

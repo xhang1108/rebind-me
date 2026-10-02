@@ -2,6 +2,7 @@
 
 import ctypes
 import inspect
+import time
 import unittest
 from ctypes import wintypes
 
@@ -60,6 +61,40 @@ class ListConflictingProcessesTest(unittest.TestCase):
             self.assertGreater(count, 0)
         finally:
             occupant._kernel32.CloseHandle(snapshot)
+
+
+class FindOccupantTest(unittest.TestCase):
+    def test_blank_path_returns_none_without_scanning(self) -> None:
+        self.assertIsNone(occupant.find_device_occupant(""))
+        self.assertIsNone(occupant.find_device_occupant("   "))
+
+    def test_scan_spawns_no_threads(self) -> None:
+        source = inspect.getsource(occupant.find_device_occupant)
+        self.assertNotIn("Thread(", source)
+
+    def test_zero_deadline_returns_none_immediately(self) -> None:
+        started = time.monotonic()
+        self.assertIsNone(
+            occupant.find_device_occupant(
+                r"\\?\hid#vid_054c&pid_0ce6#nonexistent", deadline_seconds=0
+            )
+        )
+        self.assertLess(time.monotonic() - started, 30.0)
+
+    def test_inspect_helper_rejects_a_bad_handle(self) -> None:
+        self.assertIsNone(
+            occupant._inspect_handle_once(
+                occupant._kernel32.GetCurrentProcess(),
+                123456789,
+                0xFFFFFFFF,
+                "hid#vid_054c",
+            )
+        )
+
+    def test_full_scan_of_a_bogus_path_finds_nothing(self) -> None:
+        self.assertIsNone(
+            occupant.find_device_occupant(r"\\?\hid#vid_054c&pid_0ce6#nonexistent")
+        )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 """Tests for the reconnecting HID loop using fake devices."""
 
+import time
 import unittest
 from dataclasses import dataclass
 
@@ -99,6 +100,51 @@ class PollTest(unittest.TestCase):
         loop.poll()  # connect second + read r3
         self.assertEqual(self.reports, [b"r3"])
         self.assertEqual(self.statuses, ["connected", "disconnected", "connected"])
+
+
+class RunGuardTest(unittest.TestCase):
+    def test_run_survives_a_failing_report(self) -> None:
+        device = FakeDevice([b"bad", b"good"])
+        calls: list = []
+
+        def on_report(report, dev):
+            calls.append(report)
+            if report == b"bad":
+                raise RuntimeError("boom")
+
+        loop = HidLoop(
+            lambda: device,
+            on_report=on_report,
+            on_status=lambda state, detail=None: None,
+            retry_seconds=0.01,
+        )
+        with self.assertLogs("rebind_me.hid", level="ERROR"):
+            loop.start()
+            deadline = time.monotonic() + 5.0
+            while b"good" not in calls and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertIn(b"good", calls)
+            self.assertTrue(loop._thread.is_alive())
+            loop.stop()
+
+    def test_run_survives_a_failing_status_callback(self) -> None:
+        device = FakeDevice([b"r1"])
+
+        def on_status(state, detail=None):
+            raise RuntimeError("status boom")
+
+        loop = HidLoop(
+            lambda: device,
+            on_report=lambda report, dev: None,
+            on_status=on_status,
+            retry_seconds=0.01,
+        )
+        loop.start()
+        time.sleep(0.2)
+        try:
+            self.assertTrue(loop._thread.is_alive())
+        finally:
+            loop.stop()
 
 
 class WriteTest(unittest.TestCase):

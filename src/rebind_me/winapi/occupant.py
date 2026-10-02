@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import os
-import threading
+import time
 from ctypes import wintypes
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -132,14 +132,16 @@ def _get_process_name(pid: int) -> tuple[str, str]:
         _kernel32.CloseHandle(handle)
 
 
-def _inspect_handle(target_pid: int, handle_value: int, target_path_lower: str, result_holder: list) -> None:
-    current_process = _kernel32.OpenProcess(PROCESS_DUP_HANDLE, False, target_pid)
-    if not current_process or current_process == INVALID_HANDLE_VALUE:
-        return
+OCCUPANT_SCAN_DEADLINE_SECONDS = 10.0
+MAX_SCANNED_HANDLES = 50000
+
+
+def _inspect_handle_once(process_handle, target_pid: int, handle_value: int, target_path_lower: str) -> dict | None:
+    """Duplicate one foreign handle; return its owner if it points at the device."""
     dup_handle = wintypes.HANDLE()
     try:
         if not _kernel32.DuplicateHandle(
-            current_process,
+            process_handle,
             wintypes.HANDLE(handle_value),
             _kernel32.GetCurrentProcess(),
             ctypes.byref(dup_handle),
@@ -147,27 +149,34 @@ def _inspect_handle(target_pid: int, handle_value: int, target_path_lower: str, 
             False,
             2,  # DUPLICATE_SAME_ACCESS
         ):
-            return
-        
+            return None
+
         buf_size = 512
         path_buf = ctypes.create_unicode_buffer(buf_size)
         chars = _kernel32.GetFinalPathNameByHandleW(dup_handle, path_buf, buf_size, 0)
-        if chars > 0:
-            final_path = path_buf.value.lower()
-            if target_path_lower in final_path or final_path in target_path_lower:
-                name, full_path = _get_process_name(target_pid)
-                if name:
-                    result_holder.append({"pid": target_pid, "name": name, "path": full_path})
+        if chars <= 0:
+            return None
+        final_path = path_buf.value.lower()
+        if target_path_lower not in final_path and final_path not in target_path_lower:
+            return None
+        name, full_path = _get_process_name(target_pid)
+        if not name:
+            return None
+        return {"pid": target_pid, "name": name, "path": full_path}
     except Exception:
-        pass
+        return None
     finally:
         if dup_handle and dup_handle != INVALID_HANDLE_VALUE:
             _kernel32.CloseHandle(dup_handle)
-        _kernel32.CloseHandle(current_process)
 
 
-def find_device_occupant(device_path: str) -> dict | None:
-    """Find the process locking/occupying the device path using NtQuerySystemInformation."""
+def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SCAN_DEADLINE_SECONDS) -> dict | None:
+    """Find the process locking/occupying the device path using NtQuerySystemInformation.
+
+    Single-threaded: process handles are opened once per pid and cached for
+    the scan, and the whole scan is bounded by ``deadline_seconds`` so one
+    wedged handle cannot stall the HID reconnect loop.
+    """
     target_path_lower = device_path.lower().strip()
     if not target_path_lower:
         return None
@@ -210,27 +219,37 @@ def find_device_occupant(device_path: str) -> dict | None:
     base_addr = ctypes.addressof(buffer) + offset
     entry_size = ctypes.sizeof(SYSTEM_EXTENDED_HANDLE_TABLE_ENTRY_INFO)
 
-    results: list[dict] = []
-    
-    # Iterate through handles with a timeout worker or limited check
+    # Single-threaded scan: no per-handle threads, so a wedged handle can
+    # neither pile up joins nor leak daemon threads; the deadline bounds it.
     current_pid = os.getpid()
-    for i in range(min(int(num_handles), 50000)):
-        entry_addr = base_addr + i * entry_size
-        entry = SYSTEM_EXTENDED_HANDLE_TABLE_ENTRY_INFO.from_address(entry_addr)
-        pid = int(cast_ptr := ctypes.cast(entry.UniqueProcessId, ctypes.c_void_p).value or 0)
-        if pid == 0 or pid == current_pid:
-            continue
-        
-        handle_val = int(cast_h := ctypes.cast(entry.HandleValue, ctypes.c_void_p).value or 0)
-        
-        # Run inspect in thread with timeout to avoid freezing
-        holder: list[dict] = []
-        t = threading.Thread(target=_inspect_handle, args=(pid, handle_val, target_path_lower, holder))
-        t.daemon = True
-        t.start()
-        t.join(timeout=0.05)
-        if holder:
-            return holder[0]
+    deadline = time.monotonic() + deadline_seconds
+    proc_handles: dict[int, object] = {}
+    dead_pids: set[int] = set()
+    try:
+        for i in range(min(int(num_handles), MAX_SCANNED_HANDLES)):
+            if time.monotonic() > deadline:
+                return None
+            entry_addr = base_addr + i * entry_size
+            entry = SYSTEM_EXTENDED_HANDLE_TABLE_ENTRY_INFO.from_address(entry_addr)
+            pid = int(ctypes.cast(entry.UniqueProcessId, ctypes.c_void_p).value or 0)
+            if pid == 0 or pid == current_pid or pid in dead_pids:
+                continue
+
+            handle_val = int(ctypes.cast(entry.HandleValue, ctypes.c_void_p).value or 0)
+
+            process_handle = proc_handles.get(pid)
+            if process_handle is None:
+                process_handle = _kernel32.OpenProcess(PROCESS_DUP_HANDLE, False, pid)
+                if not process_handle or process_handle == INVALID_HANDLE_VALUE:
+                    dead_pids.add(pid)
+                    continue
+                proc_handles[pid] = process_handle
+            match = _inspect_handle_once(process_handle, pid, handle_val, target_path_lower)
+            if match is not None:
+                return match
+    finally:
+        for process_handle in proc_handles.values():
+            _kernel32.CloseHandle(process_handle)
 
     return None
 
