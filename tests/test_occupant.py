@@ -5,6 +5,7 @@ import inspect
 import time
 import unittest
 from ctypes import wintypes
+from unittest import mock
 
 from rebind_me.winapi import occupant
 
@@ -81,6 +82,14 @@ class FindOccupantTest(unittest.TestCase):
         )
         self.assertLess(time.monotonic() - started, 30.0)
 
+    def test_deadline_expiry_is_logged(self) -> None:
+        with self.assertLogs("rebind_me.winapi.occupant", level="WARNING"):
+            self.assertIsNone(
+                occupant.find_device_occupant(
+                    r"\\?\hid#vid_054c&pid_0ce6#nonexistent", deadline_seconds=0
+                )
+            )
+
     def test_inspect_helper_rejects_a_bad_handle(self) -> None:
         self.assertIsNone(
             occupant._inspect_handle_once(
@@ -90,6 +99,19 @@ class FindOccupantTest(unittest.TestCase):
                 "hid#vid_054c",
             )
         )
+
+    def test_scan_iterates_entries(self) -> None:
+        # The 1MB first query always mismatches on a real handle table; the
+        # realloc branch must be taken (NTSTATUS is signed, compare unsigned).
+        with mock.patch.object(
+            occupant._kernel32, "OpenProcess", return_value=1234
+        ) as openproc:
+            self.assertIsNone(
+                occupant.find_device_occupant(
+                    r"\\?\hid#vid_054c&pid_0ce6#nonexistent", deadline_seconds=60
+                )
+            )
+            self.assertGreater(openproc.call_count, 0)
 
     def test_full_scan_of_a_bogus_path_finds_nothing(self) -> None:
         self.assertIsNone(

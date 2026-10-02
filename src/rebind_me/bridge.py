@@ -100,12 +100,16 @@ class Bridge:
             self.root / MAPPING_STORE_FILENAME,
             validate_mapping_store,
             DEFAULT_MAPPING_STORE,
+            load_kwargs={"strict": False},
         )
         self._settings = JsonStore(
             self.root / SETTINGS_FILENAME, validate_settings, DEFAULT_SETTINGS
         )
         self._presets = JsonStore(
-            self.root / PRESETS_FILENAME, validate_presets, DEFAULT_PRESETS
+            self.root / PRESETS_FILENAME,
+            validate_presets,
+            DEFAULT_PRESETS,
+            load_kwargs={"strict": False},
         )
         self.token = ""
         self.output = SendInputOutput()

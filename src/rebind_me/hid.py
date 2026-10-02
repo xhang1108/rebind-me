@@ -13,6 +13,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import threading
+import time
 from ctypes import wintypes
 from dataclasses import dataclass
 
@@ -20,6 +21,15 @@ from .errors import RebindError
 from .winapi.occupant import find_device_occupant, list_conflicting_processes
 
 _log = logging.getLogger(__name__)
+
+# Occupant diagnosis must never run on the HID thread: one wedged kernel
+# handle can block DuplicateHandle / GetFinalPathNameByHandleW past any
+# same-thread deadline. Diagnosis runs single-flight in the background and
+# the reconnect loop attaches the last known result.
+OCCUPANT_CACHE_SECONDS = 30.0
+_occupant_cache: dict[str, tuple[float, dict | None]] = {}
+_occupant_inflight: set[str] = set()
+_occupant_lock = threading.Lock()
 
 DUALSENSE_VENDOR_ID = 0x054C
 DUALSENSE_PRODUCT_ID = 0x0CE6
@@ -522,6 +532,37 @@ class HidLoop:
                 pass
 
 
+def _diagnose_occupant_async(device_path: str) -> dict | None:
+    """Return the cached device occupant without blocking.
+
+    Kicks off a single-flight background scan when the cache is missing or
+    stale; the next reconnect poll picks up the result. A scan that wedges
+    in the kernel stalls at most one daemon worker, never the HID loop.
+    """
+    now = time.monotonic()
+    with _occupant_lock:
+        cached = _occupant_cache.get(device_path)
+        if cached is not None and now - cached[0] < OCCUPANT_CACHE_SECONDS:
+            return cached[1]
+        if device_path in _occupant_inflight:
+            return cached[1] if cached is not None else None
+        _occupant_inflight.add(device_path)
+
+    def work() -> None:
+        try:
+            result = find_device_occupant(device_path)
+        except Exception as error:  # noqa: BLE001 - diagnosis must not crash the worker
+            _log.warning("occupant scan failed for %s: %s", device_path, error)
+            result = None
+        with _occupant_lock:
+            _occupant_cache[device_path] = (time.monotonic(), result)
+            _occupant_inflight.discard(device_path)
+
+    threading.Thread(target=work, name="rebind-occupant", daemon=True).start()
+    with _occupant_lock:
+        return cached[1] if cached is not None else None
+
+
 def open_first_device() -> WindowsHidDevice:
     """Provider for :class:`HidLoop`; re-enumerates on every call."""
     interface = find_dualsense()
@@ -532,7 +573,7 @@ def open_first_device() -> WindowsHidDevice:
     except OSError as error:
         winerror = getattr(error, "winerror", None) or error.errno
         if winerror in (ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION):
-            error.occupant = find_device_occupant(interface.path)
+            error.occupant = _diagnose_occupant_async(interface.path)
             error.conflicts = list_conflicting_processes()
         raise
 

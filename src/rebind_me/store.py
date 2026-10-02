@@ -356,7 +356,13 @@ def _validate_touchpad(value: object) -> dict:
     }
 
 
-def validate_mapping_store(document: object) -> dict:
+def validate_mapping_store(document: object, *, strict: bool = True) -> dict:
+    """Validate a mapping document.
+
+    ``strict=False`` is the load-time migration path: stale ``mute`` entries
+    are dropped so the rest of the file survives. Writes (``replace``) stay
+    strict and reject reserved inputs with ``UNKNOWN_BUTTON``.
+    """
     if not isinstance(document, dict):
         raise _schema("mapping store must be an object")
     version = _to_int(
@@ -374,7 +380,9 @@ def validate_mapping_store(document: object) -> dict:
     mappings: dict[str, dict] = {}
     for name, entry in mappings_in.items():
         if name in RESERVED_INPUTS:
-            raise RebindError("UNKNOWN_BUTTON", f"{name!r} is reserved and cannot be mapped")
+            if strict:
+                raise RebindError("UNKNOWN_BUTTON", f"{name!r} is reserved and cannot be mapped")
+            continue
         if name not in MAPPABLE_INPUTS:
             raise RebindError("UNKNOWN_BUTTON", f"unknown button: {name!r}")
         mappings[name] = _validate_mapping(entry)
@@ -382,7 +390,9 @@ def validate_mapping_store(document: object) -> dict:
     actions: dict[str, dict] = {}
     for name, entry in actions_in.items():
         if name in RESERVED_INPUTS:
-            raise RebindError("UNKNOWN_BUTTON", f"{name!r} is reserved and cannot be mapped")
+            if strict:
+                raise RebindError("UNKNOWN_BUTTON", f"{name!r} is reserved and cannot be mapped")
+            continue
         if name not in MAPPABLE_INPUTS:
             raise RebindError("UNKNOWN_BUTTON", f"unknown button: {name!r}")
         if name in mappings:
@@ -414,7 +424,7 @@ def _validate_preset_name(name: object) -> str:
     return cleaned
 
 
-def _validate_preset(body: object) -> dict:
+def _validate_preset(body: object, *, strict: bool = True) -> dict:
     """Validate one preset by reusing the mapping rules on its payload."""
     if not isinstance(body, dict):
         raise _schema("preset must be an object")
@@ -425,7 +435,8 @@ def _validate_preset(body: object) -> dict:
             "mappings": body.get("mappings", {}),
             "actions": body.get("actions", {}),
             "touchpad": body.get("touchpad"),
-        }
+        },
+        strict=strict,
     )
     return {
         "enabled": normalized["enabled"],
@@ -435,7 +446,7 @@ def _validate_preset(body: object) -> dict:
     }
 
 
-def validate_presets(document: object) -> dict:
+def validate_presets(document: object, *, strict: bool = True) -> dict:
     if not isinstance(document, dict):
         raise _schema("presets store must be an object")
     version = _to_int(
@@ -456,7 +467,7 @@ def validate_presets(document: object) -> dict:
         key = _validate_preset_name(name)
         if key in presets:
             raise _schema(f"duplicate preset name: {key!r}")
-        presets[key] = _validate_preset(body)
+        presets[key] = _validate_preset(body, strict=strict)
     return {"version": PRESETS_VERSION, "presets": presets}
 
 
@@ -579,17 +590,24 @@ def load_or_create_token(path: Path) -> str:
 
 
 class JsonStore:
-    """A validated JSON document with atomic writes and a baseVersion lock."""
+    """A validated JSON document with atomic writes and a baseVersion lock.
+
+    ``load_kwargs`` are passed to the validator on load only (e.g. a tolerant
+    migration mode); ``replace`` always validates strictly so bad writes get
+    a 4xx instead of silently landing on disk.
+    """
 
     def __init__(
         self,
         path: Path,
-        validator: Callable[[object], dict],
+        validator: Callable[..., dict],
         default: dict,
+        load_kwargs: dict | None = None,
     ):
         self.path = path
         self.validator = validator
         self.default = default
+        self._load_kwargs = dict(load_kwargs or {})
         self._lock = threading.RLock()
         self._document: dict = copy.deepcopy(default)
         self._base_version = 1
@@ -600,7 +618,7 @@ class JsonStore:
             if self.path.exists():
                 try:
                     raw = json.loads(self.path.read_text(encoding="utf-8"))
-                    document = self.validator(raw)
+                    document = self.validator(raw, **self._load_kwargs)
                     version = int(raw.get("baseVersion", 1))
                 except (OSError, ValueError, RebindError):
                     document = self.validator(copy.deepcopy(self.default))

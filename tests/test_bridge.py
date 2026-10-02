@@ -13,7 +13,11 @@ from rebind_me.bridge import Bridge
 from rebind_me.errors import RebindError
 from rebind_me.keycapture import KeyCapture
 from rebind_me.keys import VK_CODES
-from rebind_me.store import DEFAULT_MAPPING_STORE, DEFAULT_SETTINGS
+from rebind_me.store import (
+    DEFAULT_MAPPING_STORE,
+    DEFAULT_SETTINGS,
+    MAPPING_STORE_FILENAME,
+)
 
 
 class FakeOutput:
@@ -127,6 +131,28 @@ class BridgeTest(unittest.TestCase):
     def test_reserved_dpad_value_is_ignored(self) -> None:
         self.bridge._on_report(input_report(face=0x09), None)  # must not raise
         self.assertEqual(self.bridge.status()["inputs"], [])
+
+    def test_load_migrates_stale_mute_entries(self) -> None:
+        document = mapping_doc(
+            {"cross": {"mode": "single", "sequence": [["KeyK"]]}},
+        )
+        document["mappings"]["mute"] = {"mode": "single", "sequence": [["KeyJ"]]}
+        (self.bridge.root / MAPPING_STORE_FILENAME).write_text(
+            json.dumps(document), encoding="utf-8"
+        )
+        self.bridge._load_stores()
+        mapping = self.bridge.get_mapping()
+        self.assertIn("cross", mapping["mappings"])
+        self.assertNotIn("mute", mapping["mappings"])
+
+    def test_put_mapping_rejects_reserved_mute(self) -> None:
+        current = self.bridge.get_mapping()
+        document = {key: item for key, item in current.items() if key != "baseVersion"}
+        document["mappings"] = dict(document["mappings"])
+        document["mappings"]["mute"] = {"mode": "single", "sequence": [["KeyK"]]}
+        with self.assertRaises(RebindError) as ctx:
+            self.bridge.put_mapping(document, current["baseVersion"])
+        self.assertEqual(ctx.exception.code, "UNKNOWN_BUTTON")
 
     def test_status_reports_touchpad_zone(self) -> None:
         left = bytearray(input_report(system=0x02))

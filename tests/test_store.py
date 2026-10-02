@@ -597,6 +597,84 @@ class SchemaCoercionTest(unittest.TestCase):
             self._assert_schema_error(validate_settings, document)
 
 
+class MappingMigrationTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        self.path = self.dir / "mapping-store.json"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _doc_with_mute(self) -> dict:
+        return mapping_doc_with(
+            mappings={
+                "cross": {"mode": "single", "sequence": [["KeyK"]]},
+                "mute": {"mode": "single", "sequence": [["KeyJ"]]},
+            },
+        )
+
+    def test_load_drops_reserved_mute_but_keeps_the_rest(self) -> None:
+        self.path.write_text(json.dumps(self._doc_with_mute()), encoding="utf-8")
+        store_obj = JsonStore(
+            self.path,
+            validate_mapping_store,
+            DEFAULT_MAPPING_STORE,
+            load_kwargs={"strict": False},
+        )
+        snapshot = store_obj.load()
+        self.assertIn("cross", snapshot["mappings"])
+        self.assertNotIn("mute", snapshot["mappings"])
+
+    def test_replace_stays_strict(self) -> None:
+        store_obj = JsonStore(
+            self.path,
+            validate_mapping_store,
+            DEFAULT_MAPPING_STORE,
+            load_kwargs={"strict": False},
+        )
+        store_obj.load()
+        with self.assertRaises(RebindError) as ctx:
+            store_obj.replace(self._doc_with_mute(), base_version=1)
+        self.assertEqual(ctx.exception.code, "UNKNOWN_BUTTON")
+
+    def test_load_without_kwargs_resets_on_reserved(self) -> None:
+        self.path.write_text(json.dumps(self._doc_with_mute()), encoding="utf-8")
+        snapshot = JsonStore(
+            self.path, validate_mapping_store, DEFAULT_MAPPING_STORE
+        ).load()
+        # Strict-on-load falls back to defaults: the user's KeyK-only cross
+        # is replaced by the bundled preset entry.
+        self.assertEqual(
+            snapshot["mappings"]["cross"],
+            DEFAULT_MAPPING_STORE["mappings"]["cross"],
+        )
+
+    def test_presets_load_drops_reserved_mute(self) -> None:
+        path = self.dir / "presets.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "presets": {
+                        "old": {
+                            "mappings": {
+                                "mute": {"mode": "single", "sequence": [["KeyK"]]}
+                            },
+                            "actions": {},
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        store_obj = JsonStore(
+            path, validate_presets, DEFAULT_PRESETS, load_kwargs={"strict": False}
+        )
+        preset = store_obj.load()["presets"]["old"]
+        self.assertNotIn("mute", preset["mappings"])
+
+
 class JsonStoreTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

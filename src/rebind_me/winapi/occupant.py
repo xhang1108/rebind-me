@@ -8,9 +8,12 @@ and running process checks for common conflicting apps (Steam, DSX, DS4Windows, 
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import time
 from ctypes import wintypes
+
+_log = logging.getLogger(__name__)
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _ntdll = ctypes.WinDLL("ntdll", use_last_error=True)
@@ -163,7 +166,8 @@ def _inspect_handle_once(process_handle, target_pid: int, handle_value: int, tar
         if not name:
             return None
         return {"pid": target_pid, "name": name, "path": full_path}
-    except Exception:
+    except Exception as error:
+        _log.debug("occupant handle inspect failed for pid %s: %s", target_pid, error)
         return None
     finally:
         if dup_handle and dup_handle != INVALID_HANDLE_VALUE:
@@ -192,7 +196,9 @@ def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SC
         buffer_size,
         ctypes.byref(return_length),
     )
-    if status == STATUS_INFO_LENGTH_MISMATCH:
+    # NOTE: NtQuerySystemInformation has restype LONG (signed), so a
+    # mismatch comes back negative; compare it unsigned.
+    if status & 0xFFFFFFFF == STATUS_INFO_LENGTH_MISMATCH:
         buffer_size = return_length.value + 4096
         buffer = ctypes.create_string_buffer(buffer_size)
         status = _ntdll.NtQuerySystemInformation(
@@ -220,14 +226,25 @@ def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SC
     entry_size = ctypes.sizeof(SYSTEM_EXTENDED_HANDLE_TABLE_ENTRY_INFO)
 
     # Single-threaded scan: no per-handle threads, so a wedged handle can
-    # neither pile up joins nor leak daemon threads; the deadline bounds it.
+    # neither pile up joins nor leak daemon threads; the deadline bounds the
+    # total, and a timeout is logged so it cannot be mistaken for "no occupant".
     current_pid = os.getpid()
     deadline = time.monotonic() + deadline_seconds
+    # Process handles are opened once per pid (PROCESS_DUP_HANDLE only) and
+    # closed in the finally below; the count is bounded by live processes,
+    # far under MAX_SCANNED_HANDLES.
     proc_handles: dict[int, object] = {}
     dead_pids: set[int] = set()
     try:
         for i in range(min(int(num_handles), MAX_SCANNED_HANDLES)):
-            if time.monotonic() > deadline:
+            # NOTE: >=, not >: on coarse clocks (Windows ~15.6ms) a zero
+            # deadline must still expire on the first check.
+            if time.monotonic() >= deadline:
+                _log.warning(
+                    "occupant scan exceeded %.1fs deadline for %s",
+                    deadline_seconds,
+                    device_path,
+                )
                 return None
             entry_addr = base_addr + i * entry_size
             entry = SYSTEM_EXTENDED_HANDLE_TABLE_ENTRY_INFO.from_address(entry_addr)

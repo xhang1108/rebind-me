@@ -3,9 +3,11 @@
 import time
 import unittest
 from dataclasses import dataclass
+from unittest import mock
 
+from rebind_me import hid as hid_mod
 from rebind_me.errors import RebindError
-from rebind_me.hid import HidLoop
+from rebind_me.hid import HidLoop, _diagnose_occupant_async, open_first_device
 
 
 @dataclass
@@ -145,6 +147,90 @@ class RunGuardTest(unittest.TestCase):
             self.assertTrue(loop._thread.is_alive())
         finally:
             loop.stop()
+
+
+class OccupantAsyncTest(unittest.TestCase):
+    def setUp(self) -> None:
+        hid_mod._occupant_cache.clear()
+        hid_mod._occupant_inflight.clear()
+        self._cache_seconds = hid_mod.OCCUPANT_CACHE_SECONDS
+
+    def tearDown(self) -> None:
+        hid_mod.OCCUPANT_CACHE_SECONDS = self._cache_seconds
+        hid_mod._occupant_cache.clear()
+        hid_mod._occupant_inflight.clear()
+
+    def _wait_for_cache(self, path: str, timeout: float = 5.0) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with hid_mod._occupant_lock:
+                if path in hid_mod._occupant_cache:
+                    return
+            time.sleep(0.005)
+        self.fail("occupant background scan did not finish")
+
+    def test_first_call_returns_none_and_fills_cache(self) -> None:
+        calls: list = []
+        result = {"pid": 7, "name": "steam.exe", "path": "C:\\s"}
+        with mock.patch.object(
+            hid_mod, "find_device_occupant", side_effect=lambda p: calls.append(p) or result
+        ):
+            self.assertIsNone(_diagnose_occupant_async("fake-path"))
+            self._wait_for_cache("fake-path")
+            self.assertEqual(_diagnose_occupant_async("fake-path"), result)
+            self.assertEqual(len(calls), 1)
+
+    def test_stale_cache_triggers_a_rescan(self) -> None:
+        hid_mod.OCCUPANT_CACHE_SECONDS = 0
+        with mock.patch.object(
+            hid_mod, "find_device_occupant", return_value=None
+        ) as scan:
+            _diagnose_occupant_async("fake-path")
+            self._wait_for_cache("fake-path")
+            _diagnose_occupant_async("fake-path")
+            deadline = time.monotonic() + 5.0
+            while scan.call_count < 2 and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertEqual(scan.call_count, 2)
+
+    def test_failed_scan_caches_none_and_releases_inflight(self) -> None:
+        with mock.patch.object(
+            hid_mod, "find_device_occupant", side_effect=OSError("wedged")
+        ) as scan:
+            self.assertIsNone(_diagnose_occupant_async("fake-path"))
+            self._wait_for_cache("fake-path")
+            with hid_mod._occupant_lock:
+                self.assertNotIn("fake-path", hid_mod._occupant_inflight)
+            # A fresh negative result is served from cache: no rescan.
+            self.assertIsNone(_diagnose_occupant_async("fake-path"))
+            self.assertEqual(scan.call_count, 1)
+            # Once stale, the next poll retries the scan.
+            hid_mod.OCCUPANT_CACHE_SECONDS = 0
+            self.assertIsNone(_diagnose_occupant_async("fake-path"))
+            deadline = time.monotonic() + 5.0
+            while scan.call_count < 2 and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertEqual(scan.call_count, 2)
+
+    def test_busy_open_attaches_occupant_without_blocking(self) -> None:
+        class BusyDevice:
+            def __init__(self, interface):
+                raise busy_error()
+
+        with (
+            mock.patch.object(hid_mod, "find_dualsense", return_value=FakeInterface()),
+            mock.patch.object(hid_mod, "WindowsHidDevice", BusyDevice),
+            mock.patch.object(
+                hid_mod, "_diagnose_occupant_async", return_value={"pid": 9}
+            ) as diagnose,
+        ):
+            try:
+                open_first_device()
+                self.fail("expected OSError")
+            except OSError as error:
+                self.assertEqual(error.occupant, {"pid": 9})
+                self.assertIsInstance(error.conflicts, list)
+        self.assertEqual(diagnose.call_count, 1)
 
 
 class WriteTest(unittest.TestCase):

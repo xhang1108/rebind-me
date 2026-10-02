@@ -77,17 +77,17 @@ SHOULDER_BUTTONS = ("l1", "r1", "l2", "r2", "create", "options", "l3", "r3")
 SYSTEM_BUTTONS = ("ps", "touchpad", "mute")
 BUTTON_NAMES = FACE_BUTTONS + DPAD_BUTTONS + SHOULDER_BUTTONS + SYSTEM_BUTTONS
 
-_DPAD_MAP: tuple[tuple[str, ...], ...] = (
-    ("dpad_up",),
-    ("dpad_up", "dpad_right"),
-    ("dpad_right",),
-    ("dpad_right", "dpad_down"),
-    ("dpad_down",),
-    ("dpad_down", "dpad_left"),
-    ("dpad_left",),
-    ("dpad_up", "dpad_left"),
-    (),
-)
+_DPAD_MAP: dict[int, tuple[str, ...]] = {
+    0: ("dpad_up",),
+    1: ("dpad_up", "dpad_right"),
+    2: ("dpad_right",),
+    3: ("dpad_right", "dpad_down"),
+    4: ("dpad_down",),
+    5: ("dpad_down", "dpad_left"),
+    6: ("dpad_left",),
+    7: ("dpad_up", "dpad_left"),
+    8: (),
+}
 
 
 @dataclass(frozen=True)
@@ -154,7 +154,7 @@ def decode_input_report(report: bytes) -> InputState:
     # decode as neutral rather than raising, so a faulty device cannot
     # inject phantom directions or kill the HID loop (see HidLoop._run).
     dpad_value = face_dpad & 0x0F
-    buttons: set[str] = set(_DPAD_MAP[dpad_value] if dpad_value < len(_DPAD_MAP) else ())
+    buttons: set[str] = set(_DPAD_MAP.get(dpad_value, ()))
     for bit, name in enumerate(FACE_BUTTONS, start=4):
         if face_dpad & (1 << bit):
             buttons.add(name)
