@@ -51,6 +51,32 @@ _kernel32.QueryFullProcessImageNameW.argtypes = (
 )
 _kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
 
+TH32CS_SNAPPROCESS = 0x00000002
+MAX_PATH = 260
+
+
+class PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ctypes.c_void_p),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", wintypes.LONG),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.WCHAR * MAX_PATH),
+    ]
+
+
+_kernel32.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+_kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+_kernel32.Process32FirstW.argtypes = (wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W))
+_kernel32.Process32FirstW.restype = wintypes.BOOL
+_kernel32.Process32NextW.argtypes = (wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W))
+_kernel32.Process32NextW.restype = wintypes.BOOL
+
 _ntdll.NtQuerySystemInformation.argtypes = (
     wintypes.ULONG,
     ctypes.c_void_p,
@@ -210,58 +236,36 @@ def find_device_occupant(device_path: str) -> dict | None:
 
 
 def list_conflicting_processes() -> list[dict]:
-    """List running processes that commonly conflict with DualSense controllers."""
+    """List running processes that commonly conflict with DualSense controllers.
+
+    Pure-ctypes Toolhelp snapshot using only the standard library.
+    """
     conflicts: list[dict] = []
     seen_pids: set[int] = set()
-    
-    # Use psutil if available, or create snapshot via kernel32
+
+    snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if not snapshot or snapshot == INVALID_HANDLE_VALUE:
+        return []
     try:
-        import psutil
-        for proc in psutil.process_iter(attrs=["pid", "name", "exe"]):
-            try:
-                name = (proc.info.get("name") or "").lower()
-                if name in CONFLICTING_PROCESS_NAMES and proc.info["pid"] not in seen_pids:
-                    seen_pids.add(proc.info["pid"])
-                    conflicts.append({
-                        "pid": proc.info["pid"],
-                        "name": name,
-                        "path": proc.info.get("exe") or "",
-                    })
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                pass
-    except ImportError:
-        # Fallback via CreateToolhelp32Snapshot
-        snapshot = _kernel32.CreateToolhelp32Snapshot(0x00000002, 0) # TH32CS_SNAPPROCESS
-        if snapshot and snapshot != INVALID_HANDLE_VALUE:
-            class PROCESSENTRY32(ctypes.Structure):
-                _fields_ = [
-                    ("dwSize", wintypes.DWORD),
-                    ("cntUsage", wintypes.DWORD),
-                    ("th32ProcessID", wintypes.DWORD),
-                    ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
-                    ("th32ModuleID", wintypes.DWORD),
-                    ("cntThreads", wintypes.DWORD),
-                    ("th32ParentProcessID", wintypes.DWORD),
-                    ("pcPriClassBase", wintypes.LONG),
-                    ("dwFlags", wintypes.DWORD),
-                    ("szExeFile", wintypes.CHAR * 260),
-                ]
-            entry = PROCESSENTRY32()
-            entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
-            if _kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
-                while True:
-                    name = entry.szExeFile.decode("utf-8", errors="ignore").lower()
-                    if name in CONFLICTING_PROCESS_NAMES and entry.th32ProcessID not in seen_pids:
-                        seen_pids.add(entry.th32ProcessID)
-                        _, full_path = _get_process_name(entry.th32ProcessID)
-                        conflicts.append({
-                            "pid": entry.th32ProcessID,
-                            "name": name,
-                            "path": full_path,
-                        })
-                    if not _kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
-                        break
-            _kernel32.CloseHandle(snapshot)
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        if not _kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+            return []
+        while True:
+            name = str(entry.szExeFile or "").lower()
+            pid = int(entry.th32ProcessID)
+            if name in CONFLICTING_PROCESS_NAMES and pid not in seen_pids:
+                seen_pids.add(pid)
+                _, full_path = _get_process_name(pid)
+                conflicts.append({
+                    "pid": pid,
+                    "name": name,
+                    "path": full_path,
+                })
+            if not _kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                break
+    finally:
+        _kernel32.CloseHandle(snapshot)
 
     return conflicts
 
