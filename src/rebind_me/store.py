@@ -166,6 +166,20 @@ def _schema(message: str) -> RebindError:
     return RebindError("SCHEMA_ERROR", message)
 
 
+def _to_int(value: object, message: str) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        raise _schema(message)
+
+
+def _to_float(value: object, message: str) -> float:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        raise _schema(message)
+
+
 def _validate_sequence(value: object) -> list[list[str]]:
     if not isinstance(value, list):
         raise _schema("sequence must be a list of segments")
@@ -192,8 +206,8 @@ def _validate_repeat_window(value: object) -> dict[str, int]:
     """Validate the optional random gap window of a repeat mapping."""
     if not isinstance(value, dict):
         raise _schema("repeat.random must be an object")
-    low = int(value.get("minMs", REPEAT_MIN_MS))
-    high = int(value.get("maxMs", REPEAT_MAX_MS))
+    low = _to_int(value.get("minMs", REPEAT_MIN_MS), "repeat.random.minMs must be an integer")
+    high = _to_int(value.get("maxMs", REPEAT_MAX_MS), "repeat.random.maxMs must be an integer")
     if not REPEAT_MIN_MS <= low <= REPEAT_MAX_MS:
         raise _schema(f"repeat.random.minMs must be {REPEAT_MIN_MS}..{REPEAT_MAX_MS}")
     if not REPEAT_MIN_MS <= high <= REPEAT_MAX_MS:
@@ -206,8 +220,8 @@ def _validate_repeat_window(value: object) -> dict[str, int]:
 def _validate_repeat(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise _schema("repeat must be an object")
-    delay = int(value.get("delayMs", DEFAULT_REPEAT["delayMs"]))
-    interval = int(value.get("intervalMs", DEFAULT_REPEAT["intervalMs"]))
+    delay = _to_int(value.get("delayMs", DEFAULT_REPEAT["delayMs"]), "repeat.delayMs must be an integer")
+    interval = _to_int(value.get("intervalMs", DEFAULT_REPEAT["intervalMs"]), "repeat.intervalMs must be an integer")
     if not REPEAT_MIN_MS <= delay <= REPEAT_MAX_MS:
         raise _schema(f"repeat.delayMs must be {REPEAT_MIN_MS}..{REPEAT_MAX_MS}")
     if not REPEAT_MIN_MS <= interval <= REPEAT_MAX_MS:
@@ -332,7 +346,7 @@ def _validate_touchpad(value: object) -> dict:
     if not isinstance(value, dict):
         raise _schema("touchpad must be an object")
 
-    sensitivity = float(value.get("sensitivity", 1.5))
+    sensitivity = _to_float(value.get("sensitivity", 1.5), "touchpad.sensitivity must be a number")
     if not 0.1 <= sensitivity <= 5.0:
         raise _schema("touchpad.sensitivity must be 0.1..5.0")
 
@@ -345,7 +359,11 @@ def _validate_touchpad(value: object) -> dict:
 def validate_mapping_store(document: object) -> dict:
     if not isinstance(document, dict):
         raise _schema("mapping store must be an object")
-    if int(document.get("version", 0)) != MAPPING_VERSION:
+    version = _to_int(
+        document.get("version", 0),
+        f"unsupported mapping store version: {document.get('version')!r}",
+    )
+    if version != MAPPING_VERSION:
         raise _schema(f"unsupported mapping store version: {document.get('version')!r}")
 
     mappings_in = document.get("mappings", {})
@@ -420,7 +438,11 @@ def _validate_preset(body: object) -> dict:
 def validate_presets(document: object) -> dict:
     if not isinstance(document, dict):
         raise _schema("presets store must be an object")
-    if int(document.get("version", 0)) != PRESETS_VERSION:
+    version = _to_int(
+        document.get("version", 0),
+        f"unsupported presets version: {document.get('version')!r}",
+    )
+    if version != PRESETS_VERSION:
         raise _schema(f"unsupported presets version: {document.get('version')!r}")
 
     presets_in = document.get("presets", {})
@@ -444,18 +466,22 @@ def _validate_light(value: object) -> dict:
     color = value.get("color", [0, 0, 0])
     if not isinstance(color, list) or len(color) != 3:
         raise _schema("light color must be [r, g, b]")
-    rgb = [_clamp(int(channel), 0, 255) for channel in color]
+    rgb = [_clamp(_to_int(channel, "light color channels must be integers"), 0, 255) for channel in color]
     effect = str(value.get("effect", "static")).strip().lower()
     if effect not in _EFFECTS:
         raise _schema(f"unknown light effect: {effect!r}")
-    speed = _clamp(int(value.get("speed", 3)), 1, 5)
+    speed = _clamp(_to_int(value.get("speed", 3), "light speed must be an integer"), 1, 5)
     return {"color": rgb, "effect": effect, "speed": speed}
 
 
 def validate_settings(document: object) -> dict:
     if not isinstance(document, dict):
         raise _schema("settings must be an object")
-    if int(document.get("version", 0)) != SETTINGS_VERSION:
+    version = _to_int(
+        document.get("version", 0),
+        f"unsupported settings version: {document.get('version')!r}",
+    )
+    if version != SETTINGS_VERSION:
         raise _schema(f"unsupported settings version: {document.get('version')!r}")
 
     ui_in = document.get("ui", {})
@@ -481,9 +507,9 @@ def validate_settings(document: object) -> dict:
     mode = str(lighting_in.get("mode", "status"))
     if mode not in ("status", "manual"):
         raise _schema(f"unknown lighting.mode: {mode!r}")
-    brightness = _clamp(int(lighting_in.get("brightness", 100)), 0, 100)
-    player_leds = _clamp(int(lighting_in.get("playerLeds", 0)), 0, 0x1F)
-    auto_mute_seconds = _clamp(int(lighting_in.get("autoMuteSeconds", 60)), 0, 3600)
+    brightness = _clamp(_to_int(lighting_in.get("brightness", 100), "lighting.brightness must be an integer"), 0, 100)
+    player_leds = _clamp(_to_int(lighting_in.get("playerLeds", 0), "lighting.playerLeds must be an integer"), 0, 0x1F)
+    auto_mute_seconds = _clamp(_to_int(lighting_in.get("autoMuteSeconds", 60), "lighting.autoMuteSeconds must be an integer"), 0, 3600)
     mic_button = str(lighting_in.get("micButton", "") or "").strip()
     if mic_button and (mic_button in RESERVED_INPUTS or mic_button not in INPUT_NAMES):
         raise RebindError("UNKNOWN_BUTTON", f"unknown mic button: {mic_button!r}")
@@ -498,7 +524,7 @@ def validate_settings(document: object) -> dict:
     }
     manual = _validate_light(lighting_in.get("manual", {}))
 
-    port = int(document.get("port", DEFAULT_PORT))
+    port = _to_int(document.get("port", DEFAULT_PORT), "port must be an integer")
     if not 1 <= port <= 65535:
         raise _schema("port must be 1..65535")
     autostart_in = document.get("autostart", {})

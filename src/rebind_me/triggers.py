@@ -17,6 +17,13 @@ def _clamp(value: int, low: int, high: int) -> int:
     return max(low, min(high, value))
 
 
+def _to_int(value: object, message: str) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        raise RebindError("SCHEMA_ERROR", message)
+
+
 def normalize_trigger(trigger: object) -> dict[str, int | str]:
     """Validate and clamp one trigger config.
 
@@ -35,9 +42,9 @@ def normalize_trigger(trigger: object) -> dict[str, int | str]:
             "INVALID_TRIGGER_MODE", "trigger mode must be off, feedback or weapon"
         )
 
-    start = _clamp(int(trigger.get("start", 3)), 0, 9)
-    strength = _clamp(int(trigger.get("strength", 5)), 1, 8)
-    requested_end = _clamp(int(trigger.get("end", max(start + 1, 6))), 1, 9)
+    start = _clamp(_to_int(trigger.get("start", 3), "trigger start must be an integer"), 0, 9)
+    strength = _clamp(_to_int(trigger.get("strength", 5), "trigger strength must be an integer"), 1, 8)
+    requested_end = _clamp(_to_int(trigger.get("end", max(start + 1, 6)), "trigger end must be an integer"), 1, 9)
     end = min(9, max(start + 1, requested_end))
 
     if mode == "weapon":

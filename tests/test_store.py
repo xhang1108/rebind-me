@@ -523,6 +523,80 @@ class SettingsValidationTest(unittest.TestCase):
             validate_settings(document)
 
 
+class SchemaCoercionTest(unittest.TestCase):
+    def _settings_doc_with(self, **overrides) -> dict:
+        document = json.loads(json.dumps(DEFAULT_SETTINGS))
+        document.update(overrides)
+        return document
+
+    def _assert_schema_error(self, func, *args) -> None:
+        with self.assertRaises(RebindError) as ctx:
+            func(*args)
+        self.assertEqual(ctx.exception.code, "SCHEMA_ERROR")
+        self.assertEqual(ctx.exception.status, 400)
+
+    def test_garbage_versions_are_schema_errors(self) -> None:
+        self._assert_schema_error(
+            validate_mapping_store, mapping_doc_with(version="x")
+        )
+        self._assert_schema_error(
+            validate_presets, {"version": "x", "presets": {}}
+        )
+        self._assert_schema_error(
+            validate_settings, self._settings_doc_with(version="x")
+        )
+
+    def test_garbage_port_is_schema_error(self) -> None:
+        for bad in ("abc", None, "80x"):
+            self._assert_schema_error(
+                validate_settings, self._settings_doc_with(port=bad)
+            )
+
+    def test_garbage_touchpad_sensitivity_is_schema_error(self) -> None:
+        document = mapping_doc_with(touchpad={"sensitivity": "high"})
+        self._assert_schema_error(validate_mapping_store, document)
+
+    def test_garbage_repeat_timings_are_schema_errors(self) -> None:
+        for repeat in (
+            {"delayMs": "fast", "intervalMs": 50},
+            {"delayMs": 300, "intervalMs": None},
+            {"delayMs": 300, "intervalMs": 50, "random": {"minMs": "x", "maxMs": 80}},
+            {"delayMs": 300, "intervalMs": 50, "random": {"minMs": 40, "maxMs": None}},
+        ):
+            document = mapping_doc_with(
+                mappings={
+                    "circle": {
+                        "mode": "repeat",
+                        "sequence": [["Delete"]],
+                        "repeat": repeat,
+                    }
+                }
+            )
+            self._assert_schema_error(validate_mapping_store, document)
+
+    def test_garbage_light_values_are_schema_errors(self) -> None:
+        for lighting in (
+            {"status": {"idle": {"color": ["red", 0, 0]}}},
+            {"status": {"idle": {"speed": "fast"}}},
+            {"brightness": "bright"},
+            {"playerLeds": "x"},
+            {"autoMuteSeconds": "x"},
+        ):
+            document = self._settings_doc_with()
+            document["lighting"].update(lighting)
+            self._assert_schema_error(validate_settings, document)
+
+    def test_garbage_trigger_values_are_schema_errors(self) -> None:
+        for trigger in (
+            {"start": "x"},
+            {"strength": "x"},
+            {"end": "x"},
+        ):
+            document = self._settings_doc_with()
+            document["triggers"] = {"left": trigger}
+            self._assert_schema_error(validate_settings, document)
+
+
 class JsonStoreTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
