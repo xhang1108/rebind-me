@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import os
+import threading
 import time
 from ctypes import wintypes
 
@@ -174,22 +175,19 @@ def _inspect_handle_once(process_handle, target_pid: int, handle_value: int, tar
             _kernel32.CloseHandle(dup_handle)
 
 
-def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SCAN_DEADLINE_SECONDS) -> dict | None:
-    """Find the process locking/occupying the device path using NtQuerySystemInformation.
+def _scan_handles(device_path: str, target_path_lower: str, deadline: float) -> dict | None:
+    """Run the single-threaded handle scan; must only run on a worker thread.
 
-    Single-threaded: process handles are opened once per pid and cached for
-    the scan, and the whole scan is bounded by ``deadline_seconds`` so one
-    wedged handle cannot stall the HID reconnect loop.
+    The per-iteration deadline check cannot interrupt a wedged kernel call
+    (``GetFinalPathNameByHandleW`` is known to block forever on some
+    handles), so callers must run this on a thread they can abandon — see
+    :func:`find_device_occupant`.
     """
-    target_path_lower = device_path.lower().strip()
-    if not target_path_lower:
-        return None
-
     # Query system handles
     return_length = wintypes.ULONG(0)
     buffer_size = 1024 * 1024
     buffer = ctypes.create_string_buffer(buffer_size)
-    
+
     status = _ntdll.NtQuerySystemInformation(
         SystemExtendedHandleInformation,
         buffer,
@@ -207,7 +205,7 @@ def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SC
             buffer_size,
             ctypes.byref(return_length),
         )
-    
+
     if status != 0:
         return None
 
@@ -225,11 +223,10 @@ def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SC
     base_addr = ctypes.addressof(buffer) + offset
     entry_size = ctypes.sizeof(SYSTEM_EXTENDED_HANDLE_TABLE_ENTRY_INFO)
 
-    # Single-threaded scan: no per-handle threads, so a wedged handle can
-    # neither pile up joins nor leak daemon threads; the deadline bounds the
-    # total, and a timeout is logged so it cannot be mistaken for "no occupant".
+    # No per-handle threads, so a wedged handle can neither pile up joins
+    # nor leak threads per handle; the deadline bounds the total, and a
+    # timeout is logged so it cannot be mistaken for "no occupant".
     current_pid = os.getpid()
-    deadline = time.monotonic() + deadline_seconds
     # Process handles are opened once per pid (PROCESS_DUP_HANDLE only) and
     # closed in the finally below; the count is bounded by live processes,
     # far under MAX_SCANNED_HANDLES.
@@ -240,11 +237,6 @@ def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SC
             # NOTE: >=, not >: on coarse clocks (Windows ~15.6ms) a zero
             # deadline must still expire on the first check.
             if time.monotonic() >= deadline:
-                _log.warning(
-                    "occupant scan exceeded %.1fs deadline for %s",
-                    deadline_seconds,
-                    device_path,
-                )
                 return None
             entry_addr = base_addr + i * entry_size
             entry = SYSTEM_EXTENDED_HANDLE_TABLE_ENTRY_INFO.from_address(entry_addr)
@@ -269,6 +261,58 @@ def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SC
             _kernel32.CloseHandle(process_handle)
 
     return None
+
+
+def find_device_occupant(device_path: str, deadline_seconds: float = OCCUPANT_SCAN_DEADLINE_SECONDS) -> dict | None:
+    """Find the process locking/occupying the device path using NtQuerySystemInformation.
+
+    The scan body runs on a single daemon worker that the caller abandons at
+    ``deadline_seconds``: the in-scan deadline check cannot interrupt a
+    wedged kernel call, and without the worker one wedged handle would stall
+    the caller (and the test suite) forever. A timeout is logged so it cannot
+    be mistaken for "no occupant".
+    """
+    target_path_lower = device_path.lower().strip()
+    if not target_path_lower:
+        return None
+
+    deadline = time.monotonic() + deadline_seconds
+    if time.monotonic() >= deadline:
+        _log.warning(
+            "occupant scan exceeded %.1fs deadline for %s",
+            deadline_seconds,
+            device_path,
+        )
+        return None
+
+    box: dict[str, object] = {}
+
+    def work() -> None:
+        try:
+            box["result"] = _scan_handles(device_path, target_path_lower, deadline)
+        except Exception as error:  # noqa: BLE001 - diagnosis must not crash the caller
+            box["error"] = error
+
+    worker = threading.Thread(target=work, name="rebind-occupant-scan", daemon=True)
+    worker.start()
+    while time.monotonic() < deadline:
+        worker.join(0.02)
+        if "result" in box or "error" in box or not worker.is_alive():
+            break
+    else:
+        _log.warning(
+            "occupant scan exceeded %.1fs deadline for %s",
+            deadline_seconds,
+            device_path,
+        )
+        return None
+    if "error" in box:
+        _log.warning("occupant scan failed for %s: %s", device_path, box["error"])
+        return None
+    if "result" not in box:
+        _log.warning("occupant scan failed for %s: worker died", device_path)
+        return None
+    return box.get("result")  # type: ignore[return-value]
 
 
 def list_conflicting_processes() -> list[dict]:

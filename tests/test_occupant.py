@@ -2,6 +2,7 @@
 
 import ctypes
 import inspect
+import threading
 import time
 import unittest
 from ctypes import wintypes
@@ -69,9 +70,28 @@ class FindOccupantTest(unittest.TestCase):
         self.assertIsNone(occupant.find_device_occupant(""))
         self.assertIsNone(occupant.find_device_occupant("   "))
 
-    def test_scan_spawns_no_threads(self) -> None:
-        source = inspect.getsource(occupant.find_device_occupant)
+    def test_scan_body_spawns_no_per_handle_threads(self) -> None:
+        # The scan body must stay single-threaded (no per-handle workers to
+        # pile up); the deadline wrapper in find_device_occupant owns the one
+        # worker thread it can abandon when a kernel call wedges.
+        source = inspect.getsource(occupant._scan_handles)
         self.assertNotIn("Thread(", source)
+
+    def test_wedged_scan_returns_at_deadline(self) -> None:
+        # GetFinalPathNameByHandleW can block forever on some handles; the
+        # caller must get None at the deadline, not hang with the worker.
+        stuck = threading.Event()
+        with mock.patch.object(
+            occupant, "_scan_handles", side_effect=lambda *a: stuck.wait()
+        ):
+            started = time.monotonic()
+            with self.assertLogs("rebind_me.winapi.occupant", level="WARNING"):
+                self.assertIsNone(
+                    occupant.find_device_occupant(
+                        r"\\?\hid#vid_054c&pid_0ce6#nonexistent", deadline_seconds=0.2
+                    )
+                )
+            self.assertLess(time.monotonic() - started, 30.0)
 
     def test_zero_deadline_returns_none_immediately(self) -> None:
         started = time.monotonic()
